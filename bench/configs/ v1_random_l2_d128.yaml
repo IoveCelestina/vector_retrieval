@@ -1,0 +1,84 @@
+# Benchmark configuration (single source of truth)
+version: 1
+
+dataset:
+  # 先用随机数据（可复现）
+  type: random
+  seed: 20260121                # 固定一个数（全链路：数据 + query + 初始化）
+  dtype: float32
+  metric: l2                    # 先只支持 L2
+  dim: 128
+
+  # 两档 N：10k / 100k
+  sizes: [10000, 100000]
+
+  # query: 1000
+  num_queries: 1000
+
+  # TopK
+  topk: 10
+
+  # 随机生成分布（确保可复现；后续你想换 distribution 也统一走这里）
+  random:
+    distribution: uniform       # uniform | normal
+    uniform:
+      low: -1.0
+      high: 1.0
+    normal:
+      mean: 0.0
+      std: 1.0
+    # 可选：是否对向量做归一化（L2 下不必；但若未来上 cosine/inner product 很常见）
+    normalize: false
+
+ground_truth:
+  # 召回率基准：用 exact brute-force（相同 metric、相同 topk）
+  method: exact
+
+evaluation:
+  # Recall 的定义：Recall@K = 命中(预测TopK ∩ GTTopK) / K
+  recall_at_k: 10
+
+  # 性能指标
+  metrics:
+    - qps
+    - p99_latency_ms
+
+  # latency 统计口径
+  latency:
+    unit: ms
+    percentile: 99
+
+runner:
+  # 多线程（后续扩展），先给口子
+  threads: 1
+
+  # 预热与重复次数（建议保留，避免一次跑波动太大）
+  warmup_queries: 200
+  repeat_runs: 5
+
+indexes:
+  # baseline：暴力
+  - name: baseline_bruteforce
+    type: bruteforce
+    params: {}
+
+  # HNSW：先放两组参数占位（你后面想加更多组就继续往下加）
+  - name: hnsw_m16_efc200_efs50
+    type: hnsw
+    params:
+      M: 16
+      ef_construction: 200
+      ef_search: 50
+
+  - name: hnsw_m32_efc200_efs100
+    type: hnsw
+    params:
+      M: 32
+      ef_construction: 200
+      ef_search: 100
+
+output:
+  # 结果落盘（方便做回归对比）
+  dir: "./benchmark_results"
+  format: json                  # json | csv
+  save_per_query_latency: true  # 便于计算 P99 与可视化
