@@ -4,7 +4,7 @@
 # compile CXX with D:/mingw64/bin/c++.exe
 CXX_DEFINES = 
 
-CXX_INCLUDES = 
+CXX_INCLUDES = @CMakeFiles/bench_runner.dir/includes_CXX.rsp
 
-CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -fdiagnostics-color=always
 

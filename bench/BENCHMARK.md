@@ -124,6 +124,7 @@ cmake --build cmake-build-debug
 ```
 cmake -S . -B cmake-build-release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build-release
-.\cmake-build-release\bench_runner.exe
+& ".\cmake-build-release\bench_runner.exe"
+
 ```
 

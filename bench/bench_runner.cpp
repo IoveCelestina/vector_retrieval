@@ -11,6 +11,9 @@
 #include <cmath>       // std::ceil, double_t
 #include <stdexcept>   // std::runtime_error
 
+#include "../include/vecsearch/bruteforce_index.h"
+#include "vecsearch/bruteforce_index.h"
+
 
 //=======csv小工具==========太少了就放这里
 
@@ -158,10 +161,10 @@ double_t check_Recall(const std::vector<Id>& search_result_id,
   return static_cast<double_t>(hit) / static_cast<double_t>(K);
 }
 
-static std::vector<Id> extract_ids(const std::vector<std::pair<Id, float>>& res) {//提取查询到的<Id,floay>的id列表
+static std::vector<Id> extract_ids(const std::vector<vecsearch::Neighbor>& res) {//提取查询到的<Id,floay>的id列表
   std::vector<Id> ids;
   ids.reserve(res.size());
-  for (const auto& kv : res) ids.push_back(kv.first);
+  for (const auto& kv : res) ids.push_back(kv.id);
   return ids;
 }
 
@@ -181,10 +184,13 @@ int main() {
       "build,N,dim,topk,nq,seed,method,qps,p99_ms,mean_recall";
   const std::string build_type =
   #ifdef NDEBUG
-          "Release";
+      "Release";
   #else
-          "Debug";
+        "Debug";
   #endif
+
+  std::cout << "[Build] " << build_type << "\n";
+
 
 
 
@@ -200,7 +206,11 @@ int main() {
     auto ids = gen_ids(N);
 
     // 2) 建索引（baseline 只是存起来）
-    BruteForceIndex index(dim);
+    vecsearch::IndexConfig cfg;
+    cfg.dim = dim;
+    cfg.metric = vecsearch::Metric::L2;
+    vecsearch::BruteForceIndex index(cfg);
+
     index.add_batch(ids, base);
 
     // 3) 生成 queries（用 seed+1，确保与 base 不同但可复现）
