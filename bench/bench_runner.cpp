@@ -187,9 +187,78 @@ static std::vector<Id> extract_ids(const std::vector<vecsearch::Neighbor>& res) 
   return ids;
 }
 
+struct Case {
+  std::string type;
+  std::string params;
+};
+
+
+struct BenchmarkResult {//抽象成结果结构体
+  double recall_mean = 0.0;
+  double qps = 0.0;
+  double p99_ms = 0.0;
+};
+
+static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
+                               const vecsearch::BruteForceIndex& gt,
+                               const std::vector<float>& queries,
+                               int dim,
+                               int num_queries,
+                               int topk) {//原来的东西抽成函数
+  //  预热
+  const int warmup = 200;
+  for (int i = 0; i < std::min(warmup, num_queries); ++i) {
+    pred.search_one(&queries[(size_t)i * dim], topk);
+  }
+
+  // 计时+recall,统计每个 query latency + 总耗时
+  std::vector<double> per_query_ms;
+  per_query_ms.reserve(num_queries);
+
+  auto t0 = std::chrono::high_resolution_clock::now();
+  double recall_sum = 0.0;
+
+  for (int i = 0; i < num_queries; ++i) {
+    const float* q = &queries[(size_t)i * dim];
+
+    // 真实值
+    auto gt_res = gt.search_one(q, topk);
+    auto gt_ids = extract_ids(gt_res);
+
+    // 计算被测索引,先算pred(被测索引),先baseline自己
+    auto qs = std::chrono::high_resolution_clock::now();
+    auto pred_res = pred.search_one(q, topk);
+    auto qe = std::chrono::high_resolution_clock::now();
+
+    auto pred_ids = extract_ids(pred_res);
+    recall_sum += check_Recall(pred_ids, gt_ids, topk);
+
+    double ms = std::chrono::duration<double, std::milli>(qe - qs).count();
+    per_query_ms.push_back(ms);
+  }
+
+  auto t1 = std::chrono::high_resolution_clock::now();
+  double total_s = std::chrono::duration<double>(t1 - t0).count();
+
+  BenchmarkResult r;
+  r.recall_mean = recall_sum / num_queries;
+  r.qps = num_queries / total_s;
+  r.p99_ms = percentile_ms(per_query_ms, 0.99);
+  return r;
+}
+
+
+
 
 int main() {
-  // ====== 方案3：先把配置写死（对应你 YAML） ======
+  const std::vector<Case> cases = {
+    {"baseline_bruteforce", ""},
+    //占个位置先
+    //{"hnsw","M=16;efc=200;efs=50"}
+  };
+
+
+  //先把配置写死
   const int dim = 128;
   const std::vector<int> sizes = {10000, 100000};
   const int num_queries = 1000;
@@ -213,103 +282,59 @@ int main() {
 
 
 
-  std::cout << "Benchmark (baseline bruteforce)\n";
+  std::cout << "Benchmark\n";
   std::cout << "dim=" << dim << " sizes={10000,100000}"
             << " nq=" << num_queries << " topk=" << topk
             << " seed=" << seed << "\n";
 
   for (int N : sizes) {
-    // 1) 生成 base vectors / ids
+    // 1) 生成 base vectors / ids/queries,只做一次
     auto base = gen_vectors(N, dim, seed, low, high);
     auto ids = gen_ids(N);
+    auto queries = gen_vectors(num_queries, dim, seed + 1, low, high);
 
-    // 2) 建索引（baseline 只是存起来）
+    // 2) 所有index是公用的
     vecsearch::IndexConfig cfg;
     cfg.dim = dim;
     cfg.metric = vecsearch::Metric::L2;
-    // vecsearch::BruteForceIndex index(cfg);
-    std::string index_type = "baseline_bruteforce";
-    std::string index_params="";
-
-    auto index = CreateIndexOrDie(index_type, cfg, index_params);
-    // index.add_batch(ids, base);
-    index->add_batch(ids, base);
-
-    std::cout << "Method = " << index->name() << "\n";
-    std::cout << "Params = " << index->params() << "\n";
 
 
+    //3.先建ground truth(baseline)
+    vecsearch::BruteForceIndex gt(cfg);
+    gt.add_batch(ids, base);
 
-    // 3) 生成 queries（用 seed+1，确保与 base 不同但可复现）
-    auto queries = gen_vectors(num_queries, dim, seed + 1, low, high);
+    std::cout << "\n====================\n";
+    std::cout << "N=" << N << "\n";
 
-    // 4) 预热（可选：少量 query）
-    const int warmup = 200;
-    for (int i = 0; i < std::min(warmup, num_queries); ++i) {
-      index->search_one(&queries[(size_t)i * dim], topk);
+    //4.跑所有case
+    for (auto &c:cases) {
+      //原来的东西pred，预热，计时
+      auto index = CreateIndexOrDie(c.type, cfg, c.params);
+      index->add_batch(ids, base);
+      std::cout << "\nMethod = " << index->name() << "\n";
+      std::cout << "Params = " << index->params() << "\n";
+
+      auto result = RunCase(*index,gt,queries,dim,num_queries,topk);
+      std::cout << "Recall@10 = " << result.recall_mean << "\n";
+      std::cout << "QPS = " << result.qps << "\n";
+      std::cout << "P99(ms) = " << result.p99_ms << "\n";
+
+     // 组装一行 CSV
+      std::string row =
+        build_type + "," +
+        std::to_string(N) + "," +
+        std::to_string(dim) + "," +
+        std::to_string(topk) + "," +
+        std::to_string(num_queries) + "," +
+        std::to_string(seed) + "," +
+        index->name() + "," +
+        index->params() + "," +
+        std::to_string(result.qps) + "," +
+        std::to_string(result.p99_ms) + "," +
+        std::to_string(result.recall_mean);
+
+      append_csv_row(csv_path, csv_header, row);
     }
-
-    // 5) 正式计时：统计每个 query latency + 总耗时
-    std::vector<double> per_query_ms;
-    per_query_ms.reserve(num_queries);
-    auto t0 = std::chrono::high_resolution_clock::now();
-    double recall_sum = 0.0;
-    for (int i = 0; i < num_queries; ++i) {
-      const float* q = &queries[(size_t)i * dim];
-      //计算真实值
-      auto gt_res = index->search_one(q, topk);
-      auto gt_idx = extract_ids(gt_res);
-      //计算被测索引,先算pred(被测索引),先baseline自己
-      auto qs = std::chrono::high_resolution_clock::now();
-      auto pred_res = index->search_one(q, topk);
-
-      auto qe = std::chrono::high_resolution_clock::now();
-
-      auto pred_ids = extract_ids(pred_res);//只取id
-
-      //求和命中个数
-      double r = check_Recall(pred_ids,gt_idx,topk);
-      recall_sum += r;
-      //记录时间
-      double ms = std::chrono::duration<double, std::milli>(qe - qs).count();
-      per_query_ms.push_back(ms);
-    }
-
-
-    double recall_mean = recall_sum / num_queries;
-    auto t1 = std::chrono::high_resolution_clock::now();
-    double total_s = std::chrono::duration<double>(t1 - t0).count();
-    double qps = num_queries / total_s;
-    double p99 = percentile_ms(per_query_ms, 0.99);
-
-    std::cout << "\nN=" << N << "\n";
-    std::cout << index->name() << " Recall@10 = " << recall_mean << "\n";
-    std::cout << "QPS = " << qps << "\n";
-    std::cout << "P99(ms) = " << p99 << "\n";
-    std::cout << "Mean Recall@10 = " << recall_mean << "\n";
-
-    const std::string method = index->name();
-    const std::string params = index->params();
-
-
-    // 组装一行 CSV
-    std::string row =
-      build_type + "," +
-      std::to_string(N) + "," +
-      std::to_string(dim) + "," +
-      std::to_string(topk) + "," +
-      std::to_string(num_queries) + "," +
-      std::to_string(seed) + "," +
-      method + "," +
-      params + "," +
-      std::to_string(qps) + "," +
-      std::to_string(p99) + "," +
-      std::to_string(recall_mean);
-
-
-    append_csv_row(csv_path, csv_header, row);
-
-
   }
 
   return 0;
