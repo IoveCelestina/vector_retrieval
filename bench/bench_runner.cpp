@@ -15,6 +15,25 @@
 #include "vecsearch/bruteforce_index.h"
 
 
+//=========工厂函数===
+static std::unique_ptr<vecsearch::IIndex> CreateIndexOrDie(
+                                          const std::string& type,
+                                          const vecsearch::IndexConfig& cfg,
+                                          const std::string&para_str="") {
+  //用下划线太多了
+  if (type=="baseline_bruteforce"||type=="bruteforce"||type=="baseline") {
+    return std::make_unique<vecsearch::BruteForceIndex>(cfg);//创建unique_ptr指针
+  }
+  //实现hnsw预留接口
+
+  throw std::runtime_error("Unknown index type: "+type);
+
+}
+
+
+
+
+
 //=======csv小工具==========太少了就放这里
 
 static void append_csv_row(const std::string& path,
@@ -180,8 +199,7 @@ int main() {
   const float high = 1.0f;
 
   const std::string csv_path = "benchmark_results/results.csv";
-  const std::string csv_header =
-      "build,N,dim,topk,nq,seed,method,qps,p99_ms,mean_recall";
+  const std::string csv_header = "build,N,dim,topk,nq,seed,method,params,qps,p99_ms,mean_recall";
   const std::string build_type =
   #ifdef NDEBUG
       "Release";
@@ -209,9 +227,18 @@ int main() {
     vecsearch::IndexConfig cfg;
     cfg.dim = dim;
     cfg.metric = vecsearch::Metric::L2;
-    vecsearch::BruteForceIndex index(cfg);
+    // vecsearch::BruteForceIndex index(cfg);
+    std::string index_type = "baseline_bruteforce";
+    std::string index_params="";
 
-    index.add_batch(ids, base);
+    auto index = CreateIndexOrDie(index_type, cfg, index_params);
+    // index.add_batch(ids, base);
+    index->add_batch(ids, base);
+
+    std::cout << "Method = " << index->name() << "\n";
+    std::cout << "Params = " << index->params() << "\n";
+
+
 
     // 3) 生成 queries（用 seed+1，确保与 base 不同但可复现）
     auto queries = gen_vectors(num_queries, dim, seed + 1, low, high);
@@ -219,7 +246,7 @@ int main() {
     // 4) 预热（可选：少量 query）
     const int warmup = 200;
     for (int i = 0; i < std::min(warmup, num_queries); ++i) {
-      index.search_one(&queries[(size_t)i * dim], topk);
+      index->search_one(&queries[(size_t)i * dim], topk);
     }
 
     // 5) 正式计时：统计每个 query latency + 总耗时
@@ -230,11 +257,11 @@ int main() {
     for (int i = 0; i < num_queries; ++i) {
       const float* q = &queries[(size_t)i * dim];
       //计算真实值
-      auto gt_res = index.search_one(q, topk);
+      auto gt_res = index->search_one(q, topk);
       auto gt_idx = extract_ids(gt_res);
       //计算被测索引,先算pred(被测索引),先baseline自己
       auto qs = std::chrono::high_resolution_clock::now();
-      auto pred_res = index.search_one(q, topk);
+      auto pred_res = index->search_one(q, topk);
 
       auto qe = std::chrono::high_resolution_clock::now();
 
@@ -256,25 +283,29 @@ int main() {
     double p99 = percentile_ms(per_query_ms, 0.99);
 
     std::cout << "\nN=" << N << "\n";
-    std::cout << "baseline Recall@10 = 1.0 (exact)\n";
+    std::cout << index->name() << " Recall@10 = " << recall_mean << "\n";
     std::cout << "QPS = " << qps << "\n";
     std::cout << "P99(ms) = " << p99 << "\n";
     std::cout << "Mean Recall@10 = " << recall_mean << "\n";
 
-    std::string method = "baseline_bruteforce";
+    const std::string method = index->name();
+    const std::string params = index->params();
+
 
     // 组装一行 CSV
     std::string row =
-        build_type + "," +
-        std::to_string(N) + "," +
-        std::to_string(dim) + "," +
-        std::to_string(topk) + "," +
-        std::to_string(num_queries) + "," +
-        std::to_string(seed) + "," +
-        method + "," +
-        std::to_string(qps) + "," +
-        std::to_string(p99) + "," +
-        std::to_string(recall_mean);
+      build_type + "," +
+      std::to_string(N) + "," +
+      std::to_string(dim) + "," +
+      std::to_string(topk) + "," +
+      std::to_string(num_queries) + "," +
+      std::to_string(seed) + "," +
+      method + "," +
+      params + "," +
+      std::to_string(qps) + "," +
+      std::to_string(p99) + "," +
+      std::to_string(recall_mean);
+
 
     append_csv_row(csv_path, csv_header, row);
 

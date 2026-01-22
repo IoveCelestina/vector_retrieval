@@ -116,7 +116,7 @@ warmup = 200
 ```
 cmake -S . -B cmake-build-debug -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
 cmake --build cmake-build-debug
-.\cmake-build-debug\bench_runner.exe
+& ".\cmake-build-debug\bench_runner.exe"
 ```
 
 ### Release
@@ -125,6 +125,10 @@ cmake --build cmake-build-debug
 cmake -S . -B cmake-build-release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build-release
 & ".\cmake-build-release\bench_runner.exe"
-
 ```
 
+
+
+## 功能
+
+引入工厂函数(本质是if/else创建不同类)这样就不用改标签
