@@ -90,3 +90,40 @@ warmup = 200
 
 
 `steady_clock::now()`:和`hish_resolution_clock::now()`一样更稳定
+
+
+
+
+
+## 日志工具
+
+每次运行bench_runner，在项目目录下生成/追加`benchmark_results/results.csv`
+
+**内容示例:**
+
+- ```shell
+  build,N,dim,topk,nq,seed,method,qps,p99_ms,mean_recall
+  Release,10000,128,10,1000,20260121,baseline_bruteforce,12345.6,0.31,1.0
+  Release,100000,128,10,1000,20260121,baseline_bruteforce,1234.5,3.21,1.0
+  ```
+
+
+
+### 运行命令
+
+### Debug
+
+```
+cmake -S . -B cmake-build-debug -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug
+cmake --build cmake-build-debug
+.\cmake-build-debug\bench_runner.exe
+```
+
+### Release
+
+```
+cmake -S . -B cmake-build-release -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build cmake-build-release
+.\cmake-build-release\bench_runner.exe
+```
+

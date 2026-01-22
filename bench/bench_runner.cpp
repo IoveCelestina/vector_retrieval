@@ -6,6 +6,44 @@
 #include <random>
 #include <utility>
 #include <vector>
+#include<filesystem>
+#include<fstream>
+#include <cmath>       // std::ceil, double_t
+#include <stdexcept>   // std::runtime_error
+
+
+//=======csv小工具==========太少了就放这里
+
+static void append_csv_row(const std::string& path,
+                           const std::string& header,
+                           const std::string& row) {
+  namespace fs = std::filesystem;
+  fs::path p(path);
+
+  // 目录存在吗?
+  if (p.has_parent_path()) {
+    fs::create_directories(p.parent_path());
+  }
+
+  const bool need_header = !fs::exists(p);
+
+  std::ofstream out(path, std::ios::app);
+  if (!out) {
+    throw std::runtime_error("cannot open csv file: " + path);
+  }
+
+  if (need_header) {
+    out << header << "\n";
+  }
+  out << row << "\n";
+}
+//===========小工具结束=========
+
+
+
+
+
+
 
 using Id = uint32_t;
 
@@ -87,8 +125,44 @@ static double percentile_ms(std::vector<double>& ms, double p) {
   return ms[idx];
 }
 
-double_t check_Recall(std::vector<Id> &search_result_id,std::vector<Id>&search_correct_ans) {
+double_t check_Recall(const std::vector<Id>& search_result_id,
+                      const std::vector<Id>& search_correct_ans,
+                      uint32_t topk) {
+  // 真实K：以 gt 为准（gt 的长度就是实际 topk，可能被 N 截断）
+  const uint32_t K = std::min<uint32_t>(topk, static_cast<uint32_t>(search_correct_ans.size()));
+  if (K == 0) return 0.0;
 
+  // pred 不应该比 gt 长（你的判断保留）
+  if (search_result_id.size() > search_correct_ans.size()) {
+    throw std::runtime_error("check_Recall: pred size > gt size");
+  }
+
+  // 拷贝一份再排序：不破坏调用方的数据
+  std::vector<Id> pred = search_result_id;
+  std::vector<Id> gt   = search_correct_ans;
+  std::sort(pred.begin(), pred.end());
+  std::sort(gt.begin(), gt.end());
+
+  // 去重：避免 pred 里重复 id 被重复计数
+  pred.erase(std::unique(pred.begin(), pred.end()), pred.end());
+
+  uint32_t hit = 0;
+  for (const auto& x : pred) {
+    auto it = std::lower_bound(gt.begin(), gt.end(), x);
+    if (it != gt.end() && *it == x) {
+      ++hit;
+    }
+  }
+
+  // Recall@K = hit / K（用真实 K）
+  return static_cast<double_t>(hit) / static_cast<double_t>(K);
+}
+
+static std::vector<Id> extract_ids(const std::vector<std::pair<Id, float>>& res) {//提取查询到的<Id,floay>的id列表
+  std::vector<Id> ids;
+  ids.reserve(res.size());
+  for (const auto& kv : res) ids.push_back(kv.first);
+  return ids;
 }
 
 
@@ -101,8 +175,19 @@ int main() {
   const uint32_t seed = 20260121;
   const float low = -1.0f;
   const float high = 1.0f;
-  const std::vector<uint32_t> search_result_id;
-  const std::vector<uint32_t> search_correct_ans;
+
+  const std::string csv_path = "benchmark_results/results.csv";
+  const std::string csv_header =
+      "build,N,dim,topk,nq,seed,method,qps,p99_ms,mean_recall";
+  const std::string build_type =
+  #ifdef NDEBUG
+          "Release";
+  #else
+          "Debug";
+  #endif
+
+
+
 
   std::cout << "Benchmark (baseline bruteforce)\n";
   std::cout << "dim=" << dim << " sizes={10000,100000}"
@@ -130,20 +215,32 @@ int main() {
     // 5) 正式计时：统计每个 query latency + 总耗时
     std::vector<double> per_query_ms;
     per_query_ms.reserve(num_queries);
-
     auto t0 = std::chrono::high_resolution_clock::now();
+    double recall_sum = 0.0;
     for (int i = 0; i < num_queries; ++i) {
+      const float* q = &queries[(size_t)i * dim];
+      //计算真实值
+      auto gt_res = index.search_one(q, topk);
+      auto gt_idx = extract_ids(gt_res);
+      //计算被测索引,先算pred(被测索引),先baseline自己
       auto qs = std::chrono::high_resolution_clock::now();
-      auto res = index.search_one(&queries[(size_t)i * dim], topk);
-      (void)res; // 先不打印结果
-
+      auto pred_res = index.search_one(q, topk);
 
       auto qe = std::chrono::high_resolution_clock::now();
+
+      auto pred_ids = extract_ids(pred_res);//只取id
+
+      //求和命中个数
+      double r = check_Recall(pred_ids,gt_idx,topk);
+      recall_sum += r;
+      //记录时间
       double ms = std::chrono::duration<double, std::milli>(qe - qs).count();
       per_query_ms.push_back(ms);
     }
-    auto t1 = std::chrono::high_resolution_clock::now();
 
+
+    double recall_mean = recall_sum / num_queries;
+    auto t1 = std::chrono::high_resolution_clock::now();
     double total_s = std::chrono::duration<double>(t1 - t0).count();
     double qps = num_queries / total_s;
     double p99 = percentile_ms(per_query_ms, 0.99);
@@ -152,6 +249,26 @@ int main() {
     std::cout << "baseline Recall@10 = 1.0 (exact)\n";
     std::cout << "QPS = " << qps << "\n";
     std::cout << "P99(ms) = " << p99 << "\n";
+    std::cout << "Mean Recall@10 = " << recall_mean << "\n";
+
+    std::string method = "baseline_bruteforce";
+
+    // 组装一行 CSV
+    std::string row =
+        build_type + "," +
+        std::to_string(N) + "," +
+        std::to_string(dim) + "," +
+        std::to_string(topk) + "," +
+        std::to_string(num_queries) + "," +
+        std::to_string(seed) + "," +
+        method + "," +
+        std::to_string(qps) + "," +
+        std::to_string(p99) + "," +
+        std::to_string(recall_mean);
+
+    append_csv_row(csv_path, csv_header, row);
+
+
   }
 
   return 0;
