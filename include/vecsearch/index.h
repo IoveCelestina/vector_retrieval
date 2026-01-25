@@ -16,6 +16,7 @@ namespace vecsearch {
 	struct Neighbor {
 		Id id;
 		float dist;//距离平方，不用开方更快
+
 	};
 
 	//Index配置,dim:向量唯独，目前128,metric:距离类型,normalize:归一化,cosine常用

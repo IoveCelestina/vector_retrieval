@@ -152,6 +152,30 @@ bench/bench_runner.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.s
 .PHONY : bench/bench_runner.cpp.s
 
+src/hnsw_index.obj: src/hnsw_index.cpp.obj
+.PHONY : src/hnsw_index.obj
+
+# target to build an object file
+src/hnsw_index.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj
+.PHONY : src/hnsw_index.cpp.obj
+
+src/hnsw_index.i: src/hnsw_index.cpp.i
+.PHONY : src/hnsw_index.i
+
+# target to preprocess a source file
+src/hnsw_index.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.i
+.PHONY : src/hnsw_index.cpp.i
+
+src/hnsw_index.s: src/hnsw_index.cpp.s
+.PHONY : src/hnsw_index.s
+
+# target to generate assembly for a file
+src/hnsw_index.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.s
+.PHONY : src/hnsw_index.cpp.s
+
 # Help Target
 help:
 	@echo The following are some of the valid targets for this Makefile:
@@ -164,6 +188,9 @@ help:
 	@echo ... bench/bench_runner.obj
 	@echo ... bench/bench_runner.i
 	@echo ... bench/bench_runner.s
+	@echo ... src/hnsw_index.obj
+	@echo ... src/hnsw_index.i
+	@echo ... src/hnsw_index.s
 .PHONY : help
 
 

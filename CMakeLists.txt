@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_executable(bench_runner
         bench/bench_runner.cpp
+        include/vecsearch/hnsw_index.h
+        src/hnsw_index.cpp
 )
 
 target_compile_features(bench_runner PRIVATE cxx_std_20)
