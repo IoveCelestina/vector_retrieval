@@ -12,7 +12,7 @@
 #include <stdexcept>   // std::runtime_error
 
 #include "../include/vecsearch/bruteforce_index.h"
-#include "vecsearch/bruteforce_index.h"
+#include "../include/vecsearch/hnsw_index.h"
 
 
 //=========工厂函数===
@@ -20,13 +20,16 @@ static std::unique_ptr<vecsearch::IIndex> CreateIndexOrDie(
                                           const std::string& type,
                                           const vecsearch::IndexConfig& cfg,
                                           const std::string&para_str="") {
-  //用下划线太多了
-  if (type=="baseline_bruteforce"||type=="bruteforce"||type=="baseline") {
+    //用下划线太多了
+    if (type=="baseline_bruteforce"||type=="bruteforce"||type=="baseline") {
     return std::make_unique<vecsearch::BruteForceIndex>(cfg);//创建unique_ptr指针
-  }
-  //实现hnsw预留接口
-
-  throw std::runtime_error("Unknown index type: "+type);
+    }
+    //实现hnsw预留接口
+    if (type == "hnsw") {
+        vecsearch::HNSWParams p; // 先用默认参数（M=16, ef_construction=200, ef_search=50）
+        return std::make_unique<vecsearch::HNSWIndex>(cfg, p);
+    }
+    throw std::runtime_error("Unknown index type: "+type);
 
 }
 
@@ -253,8 +256,7 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
 int main() {
   const std::vector<Case> cases = {
     {"baseline_bruteforce", ""},
-    //占个位置先
-    //{"hnsw","M=16;efc=200;efs=50"}
+    {"hnsw","M=16;efc=200;efs=50"}//现在是字符串没有解析
   };
 
 

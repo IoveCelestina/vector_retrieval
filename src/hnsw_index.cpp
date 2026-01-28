@@ -106,6 +106,7 @@ namespace vecsearch {
 			res.emplace_back(best.top());
 			best.pop();
 		}
+		std::reverse(res.begin(),res.end());//这样就是从小到到大了
 		return res;
 	}
 
@@ -146,7 +147,7 @@ namespace vecsearch {
 			res.emplace_back(nb,dist_l2_sqr(&data_[(size_t)nb*(size_t)cfg_.dim],center_vsc));
 			//一样的算距离放进去
 		}
-		sort(res.begin(), res.end(),[&](const auto &a,const auto &b) {
+		std::sort(res.begin(), res.end(),[&](const auto &a,const auto &b) {
 			return a.dist<b.dist;
 		});
 		if ((int) res.size()>M) res.resize(M);
@@ -187,42 +188,61 @@ namespace vecsearch {
 	// ===== add_batch：插入 + 建图 =====
 	void HNSWIndex::add_batch(const std::vector<Id>& ids,
 	                          const std::vector<float>& vectors) {
-	  const std::size_t n = ids.size();
-	  if (vectors.size() != n * (std::size_t)cfg_.dim) {
-	    std::cerr << "HNSWIndex::add_batch: vectors size mismatch\n";
-	    std::exit(1);
-	  }
+		const std::size_t n = ids.size();
+		if (n==0) return;
+		if (vectors.size() != n * (std::size_t)cfg_.dim) {
+			std::cerr << "HNSWIndex::add_batch: vectors size mismatch\n";
+			std::exit(1);
+		}
+		//这里假设Id是连续的，先把数据append仅需然后在search_layer才不会越界
+		std::size_t oldN = ids_.size();
+		std::size_t dim = (size_t)cfg_.dim;
+		ids_.reserve(oldN+n);
+		data_.reserve((oldN+n) * dim);
+		graph_.reserve(oldN+n);
 
-	  // TODO(简化假设)：
-	  // - 先假设 ids = 0..N-1 且连续（你现在 gen_ids 就是这样）
-	  // - 直接 ids_ = ids; data_ = vectors
-	  // - graph_.resize(N)
-	  //
-	  // 然后逐点插入建图：
-	  // for each id:
-	  //   if first: entry_=id; continue
-	  //   candidates = search_layer_(vec_of_id, entry_, p_.ef_construction)
-	  //   neigh = select_neighbors_simple_(candidates, p_.M)
-	  //   connect_bidirectional_(id, neigh)
-	  //   entry_ = id (可选)
-	  (void)ids;
-	  (void)vectors;
+		for (std::size_t  i = 0;i<n;++i) {
+			const Id expected_id = (Id)(oldN + i);
+			if (ids[i] != expected_id) {
+				std::cerr << "Only continuous ids supported: expect "<<expected_id<< ", got " << ids[i]<<"\n";
+				std::exit(1);
+			}
+			ids_.emplace_back(ids[i]);
+			const float* vec = &vectors[i*dim];
+			data_.insert(data_.end(), vec, vec+dim);
+			graph_.emplace_back();//空邻接表
+		}
+
+		//初始化入口，第一次插入的时候
+		if (!has_entry_) {
+			has_entry_ = true;
+			entry_=0;
+		}
+		//对新插入的点建图
+		//如果oldN=0，第0个点作为入口不需要连边，从u=1开始
+		std::size_t start_u = (oldN==0)?1:oldN;
+		for (std::size_t u = start_u;u<oldN+n;++u) {
+			const float *target = &data_[u*dim];
+			auto candidates = search_layer_(target,entry_,p_.ef_construction);
+			auto neigh = select_neighbors_simple_(candidates,p_.M);
+
+			//去掉自己保险一点
+			neigh.erase(std::remove(neigh.begin(), neigh.end(),(Id)u),neigh.end());
+			connect_bidirectional_((Id)u, neigh);
+		}
 	}
 
 	// ===== search_one:查询 =====
 	std::vector<Neighbor> HNSWIndex::search_one(const float* q, int topk) const {
-	  if (!has_entry_ || ids_.empty() || topk <= 0) return {};
-	  if (topk > (int)ids_.size()) topk = (int)ids_.size();
+		if (!has_entry_ || ids_.empty() || topk <= 0) return {};
+		if (topk > (int)ids_.size()) topk = (int)ids_.size();
 
-	  int ef = p_.ef_search;
-	  if (ef < topk) ef = topk;
-
-	  // TODO：
-	  // - best = search_layer_(q, entry_, ef)
-	  // - sort best by dist asc
-	  // - resize topk
-	  (void)q;
-	  return {};
+		int ef = p_.ef_search;
+		if (ef < topk) ef = topk;
+		std::vector<Neighbor> best = search_layer_(q,entry_,ef);//找谁，入口，找几个(最多几个)
+		//ef_search是候选集合大小上限，需要确保大于等于topk，返回的已经是升序，所以下一步不用排序
+		if (best.size()>topk) best.resize(topk);
+		return best;
 	}
 
 	std::vector<std::vector<Neighbor>> HNSWIndex::search_batch(const float* queries,
