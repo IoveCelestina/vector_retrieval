@@ -244,4 +244,10 @@ CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj: \
  D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/x86_64-w64-mingw32/bits/c++io.h \
  D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/bits/fstream.tcc \
  C:/Users/29357/Desktop/vector_retrieval/include/vecsearch/bruteforce_index.h \
- C:/Users/29357/Desktop/vector_retrieval/include/vecsearch/index.h
+ C:/Users/29357/Desktop/vector_retrieval/include/vecsearch/index.h \
+ C:/Users/29357/Desktop/vector_retrieval/include/vecsearch/hnsw_index.h \
+ D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/queue \
+ D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/deque \
+ D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/bits/stl_deque.h \
+ D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/bits/deque.tcc \
+ D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/include/c++/bits/stl_queue.h
