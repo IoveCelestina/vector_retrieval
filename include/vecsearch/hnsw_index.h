@@ -9,9 +9,9 @@
 
 namespace vecsearch {
 	struct HNSWParams {//参数,看README
-          int M = 16;
+          int M = 32;
           int ef_construction = 200;
-          int ef_search = 50;
+          int ef_search = 400;
 	};
     //貌似单层HNSW是单层ANN?
 	//继承Index

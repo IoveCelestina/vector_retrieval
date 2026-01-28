@@ -10,9 +10,71 @@
 #include<fstream>
 #include <cmath>       // std::ceil, double_t
 #include <stdexcept>   // std::runtime_error
+#include <sstream>
+#include <cctype>
 
 #include "../include/vecsearch/bruteforce_index.h"
 #include "../include/vecsearch/hnsw_index.h"
+
+
+//解析函数
+static vecsearch::HNSWParams ParseHNSWParamsOrDie(const std::string& para_str) {
+  vecsearch::HNSWParams p;//默认值
+  auto trim=[](std::string s) {
+    const char* ws = "\t\r\n";
+    s.erase(0,s.find_first_not_of(ws));
+    s.erase(s.find_last_not_of(ws)+1);
+    return s;
+  };
+  //支持;和,
+  std::string s = para_str;
+  for (char &c:s) {
+    if (c==',')c==';';
+  }
+  std::stringstream ss(s);
+  std::string item;
+  //小模拟
+  while (std::getline(ss, item, ';')) {
+    item = trim(item);
+    if (item.empty()) continue;
+
+    auto pos = item.find('=');
+    if (pos == std::string::npos) {
+      throw std::runtime_error("Bad hnsw param (missing '='): " + item);
+    }
+
+    std::string key = trim(item.substr(0, pos));
+    std::string val = trim(item.substr(pos + 1));
+
+    // key 统一转小写
+    for (auto& ch : key) ch = (char)std::tolower((unsigned char)ch);
+
+    int v = 0;
+    try {
+      v = std::stoi(val);
+    } catch (...) {
+      throw std::runtime_error("Bad hnsw param value: " + item);
+    }
+
+    if (key == "m") {
+      p.M = v;
+    } else if (key == "efc" || key == "ef_construction" || key == "efconstruction") {
+      p.ef_construction = v;
+    } else if (key == "efs" || key == "ef_search" || key == "efsearch") {
+      p.ef_search = v;
+    } else {
+      throw std::runtime_error("Unknown hnsw param key: " + key);
+    }
+  }
+
+  // 参数校验
+  if (p.M <= 0 || p.ef_construction <= 0 || p.ef_search <= 0) {
+    throw std::runtime_error("HNSW params must be > 0: " + para_str);
+  }
+  return p;
+}
+
+
 
 
 //=========工厂函数===
@@ -26,7 +88,12 @@ static std::unique_ptr<vecsearch::IIndex> CreateIndexOrDie(
     }
     //实现hnsw预留接口
     if (type == "hnsw") {
-        vecsearch::HNSWParams p; // 先用默认参数（M=16, ef_construction=200, ef_search=50）
+        // vecsearch::HNSWParams p; // 先用默认参数（M=16, ef_construction=200, ef_search=50）
+        //        // return std::make_unique<vecsearch::HNSWIndex>(cfg, p);
+        vecsearch::HNSWParams p;
+        if (!para_str.empty()) {
+            p = ParseHNSWParamsOrDie(para_str);
+        }
         return std::make_unique<vecsearch::HNSWIndex>(cfg, p);
     }
     throw std::runtime_error("Unknown index type: "+type);
@@ -256,7 +323,9 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
 int main() {
   const std::vector<Case> cases = {
     {"baseline_bruteforce", ""},
-    {"hnsw","M=16;efc=200;efs=50"}//现在是字符串没有解析
+    {"hnsw","M=16;efc=200;efs=50"},
+    {"hnsw", "M=32;efC=200;efS=400"},
+    {"hnsw", "M=64;efC=200;efS=500"},
   };
 
 
@@ -270,7 +339,7 @@ int main() {
   const float high = 1.0f;
 
   const std::string csv_path = "benchmark_results/results.csv";
-  const std::string csv_header = "build,N,dim,topk,nq,seed,method,params,qps,p99_ms,mean_recall";
+  const std::string csv_header = "build,N,dim,topk,nq,seed,method,params,build_ms,build_qps,qps,p99_ms,mean_recall";
   const std::string build_type =
   #ifdef NDEBUG
       "Release";
@@ -312,10 +381,20 @@ int main() {
     for (auto &c:cases) {
       //原来的东西pred，预热，计时
       auto index = CreateIndexOrDie(c.type, cfg, c.params);
+
+      //build time计时
+      auto tb0 = std::chrono::high_resolution_clock::now();
       index->add_batch(ids, base);
+      auto tb1 = std::chrono::high_resolution_clock::now();
+
+      double build_ms = std::chrono::duration<double, std::milli>(tb1 - tb0).count();
+      double build_s  = std::chrono::duration<double>(tb1 - tb0).count();
+      double build_qps = (build_s > 0.0) ? (double)N / build_s : 0.0;
+
+
       std::cout << "\nMethod = " << index->name() << "\n";
       std::cout << "Params = " << index->params() << "\n";
-
+      std::cout << "Build(ms) = " << build_ms << "\n";
       auto result = RunCase(*index,gt,queries,dim,num_queries,topk);
       std::cout << "Recall@10 = " << result.recall_mean << "\n";
       std::cout << "QPS = " << result.qps << "\n";
@@ -331,9 +410,13 @@ int main() {
         std::to_string(seed) + "," +
         index->name() + "," +
         index->params() + "," +
+        std::to_string(build_ms) + "," +
+        std::to_string(build_qps) + "," +
         std::to_string(result.qps) + "," +
         std::to_string(result.p99_ms) + "," +
         std::to_string(result.recall_mean);
+
+
 
       append_csv_row(csv_path, csv_header, row);
     }
