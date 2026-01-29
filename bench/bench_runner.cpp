@@ -323,9 +323,11 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
 int main() {
   const std::vector<Case> cases = {
     {"baseline_bruteforce", ""},
-    {"hnsw","M=16;efc=200;efs=50"},
+    // {"hnsw","M=16;efc=200;efs=50"},
     {"hnsw", "M=32;efC=200;efS=400"},
-    {"hnsw", "M=64;efC=200;efS=500"},
+    // {"hnsw", "M=64;efC=200;efS=500"},
+    // {"hnsw", "M=32;efC=200;efS=100"},
+    {"hnsw", "M=32;efC=200;efS=200"},
   };
 
 

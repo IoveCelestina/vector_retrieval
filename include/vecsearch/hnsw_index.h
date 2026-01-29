@@ -61,6 +61,8 @@ namespace vecsearch {
   		// 建双向边 + 做裁剪
   		void connect_bidirectional_(Id u, const std::vector<Id>& neigh);
 
+		std::vector<Id> select_neighbors_heuristic_(Id center, std::vector<Neighbor>& candidates, int M) const;
+
  		private:
   		IndexConfig cfg_;
   		HNSWParams p_;
@@ -72,7 +74,10 @@ namespace vecsearch {
   		// 邻接表 graph_[i] 存邻居 id
   		// 默认 id = 0..N-1 这样
   		std::vector<std::vector<Id>> graph_;
-		};
+
+		mutable std::vector<std::uint32_t> visited_tag_;//避免每次search_layer_分配数组，由于函数是const，但我们需要再里面修改成员变量的值,所以要用mutable
+		mutable std::uint32_t cur_tag_ = 1;
+	};
 
 };
 
