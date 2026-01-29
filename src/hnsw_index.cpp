@@ -202,7 +202,6 @@ namespace vecsearch {
                 }
             }
             if (!dup) selected.push_back(cid);
-            if (!dup) selected.push_back(cid);
         }
     }
 
@@ -362,6 +361,7 @@ namespace vecsearch {
 			//去掉自己保险一点
 			neigh.erase(std::remove(neigh.begin(), neigh.end(),(Id)u),neigh.end());
 			connect_bidirectional_((Id)u, neigh);
+			entry_ = (Id)u;
 		}
 	}
 
