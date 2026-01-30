@@ -5,6 +5,8 @@
 #include <iostream>
 #include <unordered_set>
 #include<array>
+#include<immintrin.h>
+
 namespace vecsearch {
 	HNSWIndex::HNSWIndex(IndexConfig cfg,HNSWParams p):cfg_(cfg),p_(p) {
 		if (cfg_.dim<=0) {
@@ -36,11 +38,49 @@ namespace vecsearch {
 				";efC="+std::to_string(p_.ef_construction)+
 				";efS="+ std::to_string(p_.ef_search);
 	}
+	// float HNSWIndex::dist_l2_sqr(const float *a, const float *b) const {
+	// 	float res=0;
+	// 	for (int i = 0;i<cfg_.dim;++i) {
+	// 		float d=a[i]-b[i];
+	// 		res+=d*d;
+	// 	}
+	// 	return res;
+	// }
+
 	float HNSWIndex::dist_l2_sqr(const float *a, const float *b) const {
-		float res=0;
-		for (int i = 0;i<cfg_.dim;++i) {
-			float d=a[i]-b[i];
-			res+=d*d;
+		const std::size_t d = (std::size_t)cfg_.dim;
+		std::size_t i = 0;
+		float res = 0;
+
+#if defined(__AVX2__)
+		__m256 sum = _mm256_setzero_ps();
+
+		// 主循环：每次处理 8 个 float
+		for (; i + 8 <= d; i += 8) {
+			__m256 v1 = _mm256_loadu_ps(a + i);
+			__m256 v2 = _mm256_loadu_ps(b + i);
+			__m256 diff = _mm256_sub_ps(v1, v2);
+			sum = _mm256_fmadd_ps(diff, diff, sum);
+		}
+
+		// 寄存器内水平求和
+		// 将 8 个 float逐步折叠相加,避免存入内存
+		__m128 sum_high = _mm256_extractf128_ps(sum, 1); // 取出高 128 位
+		__m128 sum_low  = _mm256_castps256_ps128(sum);   // 取出低 128 位
+		__m128 vres     = _mm_add_ps(sum_low, sum_high); // 8 -> 4
+		vres = _mm_hadd_ps(vres, vres);                  // 4 -> 2
+		vres = _mm_hadd_ps(vres, vres);                  // 2 -> 1
+
+		float temp;
+		_mm_store_ss(&temp, vres); //只存最后1个float
+		res = temp;
+
+#endif
+
+		// 处理剩余的维度
+		for (; i < d; ++i) {
+			float diff = a[i] - b[i];
+			res += diff * diff;
 		}
 		return res;
 	}
@@ -147,12 +187,12 @@ namespace vecsearch {
 
     const std::size_t dim = (std::size_t)cfg_.dim;
 
-    // 限制候选池大小，减少 cand-vs-selected 的距离计算
+    // 限制候选池大小,减少 cand-vs-selected 的距离计算
     const int L = std::min<int>((int)candidates.size(), std::max((3 * M) / 2, M));
 
 
-    // search_layer_ 返回的 candidates 已经是按 dist 升序
-    // 所以这里直接截断前 L 个即可，不再排序/不再 nth_element
+    // search_layer_返回的candidates 已经是按dist 升序
+    // 所以这里直接截断前L个即可，不再排序/不再nth_element
     if ((int)candidates.size() > L) {
         candidates.resize(L);
     }

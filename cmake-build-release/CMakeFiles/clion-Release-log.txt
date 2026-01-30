@@ -1,4 +1,0 @@
-D:\bin\cmake.exe -DCMAKE_BUILD_TYPE=Release -G "MinGW Makefiles" -S C:\Users\29357\Desktop\vector_retrieval -B C:\Users\29357\Desktop\vector_retrieval\cmake-build-release
--- Configuring done (0.1s)
--- Generating done (0.0s)
--- Build files have been written to: C:/Users/29357/Desktop/vector_retrieval/cmake-build-release

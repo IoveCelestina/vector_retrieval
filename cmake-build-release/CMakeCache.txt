@@ -24,9 +24,6 @@ CMAKE_AR:FILEPATH=D:/mingw64/bin/ar.exe
 // MinSizeRel ...
 CMAKE_BUILD_TYPE:STRING=Release
 
-//Enable colored diagnostics throughout.
-CMAKE_COLOR_DIAGNOSTICS:BOOL=ON
-
 //Enable/Disable color output during build.
 CMAKE_COLOR_MAKEFILE:BOOL=ON
 

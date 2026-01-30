@@ -9,6 +9,19 @@ add_executable(bench_runner
         src/hnsw_index.cpp
 )
 
+# 针对 MinGW/GCC/Clang 的核心优化
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # -O3: 最高级别通用优化
+    # -march=native: 自动探测本机CPU架构，开启 AVX2/FMA 等指令集
+    # -ffast-math: 允许浮点运算在极小精度损失下大幅加速
+    target_compile_options(bench_runner PRIVATE -O3 -march=native -ffast-math)
+endif()
+
+# 针对MSVC(如果在Windows VS环境跑,备用)
+if(MSVC)
+    target_compile_options(bench_runner PRIVATE /O2 /arch:AVX2)
+endif()
+
 target_compile_features(bench_runner PRIVATE cxx_std_20)
 
 # 把 include 目录加进去

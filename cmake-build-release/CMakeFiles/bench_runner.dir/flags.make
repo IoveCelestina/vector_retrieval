@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = @CMakeFiles/bench_runner.dir/includes_CXX.rsp
 
-CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -fdiagnostics-color=always
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -O3 -march=native -ffast-math
 
