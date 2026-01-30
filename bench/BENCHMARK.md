@@ -129,8 +129,13 @@ cmake --build cmake-build-release
 
 
 
-## 功能
+## 技术
 
 引入工厂函数(本质是if/else创建不同类)这样就不用改标签
 
 只需要修改cases里面的参数，就可以运行
+
+
+
+
+

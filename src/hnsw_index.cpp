@@ -132,6 +132,19 @@ namespace vecsearch {
 
 			//扩展邻居
 			auto &neighbors = graph_[cur.id];
+
+			//=================内存预取开始=================
+			//提前告诉CPU把邻居的向量数据从内存拉到L1缓存
+			for (const auto& nb : neighbors) {
+				if ((std::size_t)nb>=visited_tag_.size()||visited_tag_[nb]==tag) continue;
+				// 计算该邻居向量在data_中的内存地址
+				const char* vec= reinterpret_cast<const char*>(&data_[(std::size_t)nb * (std::size_t)cfg_.dim]);
+				//_MM_HINT_T0表示预期稍后会频繁使用,拉到所有缓存层
+				_mm_prefetch(vec, _MM_HINT_T0);
+			}
+			// ============内存预取结束====================
+
+
 			for (Id nb: neighbors) {
 				// if (visited.find(nb)!=visited.end()) continue;
 				// visited.insert(nb);

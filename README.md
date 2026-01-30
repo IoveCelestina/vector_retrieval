@@ -17,7 +17,7 @@
 
 ## 算法基础
 
-### 1)单层HNSW
+### 1) 单层HNSW
 
 #### **1.1**
 
@@ -167,3 +167,26 @@ function SearchOne(query_vec, topK):
 
 
 
+
+
+## 优化
+
+
+
+#### O3优化+AVX2+手写SIMD(-march=native) 让build时间快了很多
+
+- **O3**:让小函数自动进行内联，同时把循环展开(Unroll)，甚至自动尝试使用SSE指令(1次算4个float)来向量化
+
+- SIMD(-march=native):长出8只手(256位寄存器)，一次装配8个零件
+
+
+
+#### 内存预取
+
+- 在search_layer_的过程中告诉CPU提前把neighbors拉到L1缓存
+
+- ```
+  _mm_prefetch(vec, _MM_HINT_T0);
+  ```
+
+  - _MM_HINT_T0表示预期稍后会频繁使用,拉到所有缓存层

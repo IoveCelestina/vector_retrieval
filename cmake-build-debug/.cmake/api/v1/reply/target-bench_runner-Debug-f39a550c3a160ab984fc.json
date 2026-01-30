@@ -14,6 +14,7 @@
 		"commands" : 
 		[
 			"add_executable",
+			"target_compile_options",
 			"target_include_directories",
 			"target_compile_features"
 		],
@@ -35,13 +36,19 @@
 			{
 				"command" : 1,
 				"file" : 0,
-				"line" : 15,
+				"line" : 17,
 				"parent" : 0
 			},
 			{
 				"command" : 2,
 				"file" : 0,
-				"line" : 12,
+				"line" : 28,
+				"parent" : 0
+			},
+			{
+				"command" : 3,
+				"file" : 0,
+				"line" : 25,
 				"parent" : 0
 			}
 		]
@@ -53,12 +60,24 @@
 			[
 				{
 					"fragment" : "-g -std=gnu++20 -fdiagnostics-color=always"
+				},
+				{
+					"backtrace" : 2,
+					"fragment" : "-O3"
+				},
+				{
+					"backtrace" : 2,
+					"fragment" : "-march=native"
+				},
+				{
+					"backtrace" : 2,
+					"fragment" : "-ffast-math"
 				}
 			],
 			"includes" : 
 			[
 				{
-					"backtrace" : 2,
+					"backtrace" : 3,
 					"path" : "C:/Users/29357/Desktop/vector_retrieval/include"
 				}
 			],
@@ -67,7 +86,7 @@
 			{
 				"backtraces" : 
 				[
-					3
+					4
 				],
 				"standard" : "20"
 			},
