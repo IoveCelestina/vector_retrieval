@@ -179,7 +179,29 @@ function SearchOne(query_vec, topK):
 
 - SIMD(-march=native):长出8只手(256位寄存器)，一次装配8个零件
 
+  - `__m256`是一个256-bit向量寄存器，对于`float` 就是8 个 float打包在一起
 
+  - `__m256 _mm256_loadu_ps(float const* mem_addr);`  
+
+    - `mem_addr:` 指向float的指针
+    - `loadu` 的`u` =unaligned，表示不要求32字节对齐
+
+  - `__m256 _mm256_sub_ps(__m256 a, __m256 b);` 对8个float分别做减法
+
+    - 返回每个lane: `a[j]-b[j]`
+
+  - `__m256 _mm256_fmadd_ps(__m256 a, __m256 b, __m256 c);`
+
+    - 计算 `a*b+c`
+
+    - 老机器不支持FMA时用以下代替
+
+      - ```
+        __m256 _mm256_mul_ps(__m256 a, __m256 b); // a*b
+        __m256 _mm256_add_ps(__m256 a, __m256 b); // a+b
+        ```
+
+        
 
 #### 内存预取
 
