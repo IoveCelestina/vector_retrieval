@@ -29,7 +29,7 @@ namespace vecsearch {
 		graph_.clear();
 		has_entry_=false;
 		entry_= 0;
-		locks_.clear();
+		node_locks_.clear();
 	}
 
 	std::string HNSWIndex::params()const {
@@ -349,7 +349,7 @@ namespace vecsearch {
 
 		//更新当前节点u,必须加大括号限制锁的范围
 		{
-			std::lock_guard<std::mutex> lock(*locks_[u]);
+			std::lock_guard<std::mutex> lock(*node_locks_[u]);
 			for (Id nb : uniq) {
 				graph_[u].emplace_back(nb);
 			}
@@ -360,7 +360,7 @@ namespace vecsearch {
 
 		// prune nb
 		for (Id nb : uniq) {
-			std::lock_guard<std::mutex> lock(*locks_[nb]);
+			std::lock_guard<std::mutex> lock(*node_locks_[nb]);
 			graph_[nb].emplace_back(u);
 			if ((int)graph_[nb].size() > p_.M) {
 				prune_neighbors_by_distance_(nb, graph_[nb], p_.M);
@@ -386,10 +386,10 @@ namespace vecsearch {
 		data_.reserve((oldN+n) * dim);
 		graph_.reserve(oldN+n);
 		//初始化locks_
-		if (locks_.size() < oldN+n) {
-			locks_.reserve(oldN+n);
-			for (std::size_t i = locks_.size();i<oldN+n;i++) {
-				locks_.emplace_back(std::make_unique<std::mutex>());
+		if (node_locks_.size() < oldN+n) {
+			node_locks_.reserve(oldN+n);
+			for (std::size_t i = node_locks_.size();i<oldN+n;i++) {
+				node_locks_.emplace_back(std::make_unique<std::mutex>());
 			}
 		}
 

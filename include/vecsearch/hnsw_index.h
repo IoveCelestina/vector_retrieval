@@ -78,7 +78,7 @@ namespace vecsearch {
   		std::vector<std::vector<Id>> graph_;
 
 		//锁数组,每个节点有一把锁，用unique_ptr是因为锁不可以被复制，只能用指针管理
-		std::vector<std::unique_ptr<std::mutex>> locks_;
+		std::vector<std::unique_ptr<std::mutex>> node_locks_;
 	};
 
 };

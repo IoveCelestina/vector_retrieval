@@ -325,15 +325,15 @@ int main() {
     {"baseline_bruteforce", ""},
     // {"hnsw","M=16;efc=200;efs=50"},
     {"hnsw", "M=32;efC=200;efS=400"},
-    // {"hnsw", "M=64;efC=200;efS=500"},
+    {"hnsw", "M=64;efC=200;efS=600"},
     // {"hnsw", "M=32;efC=200;efS=100"},
-    {"hnsw", "M=32;efC=200;efS=200"},
+    // {"hnsw", "M=32;efC=200;efS=200"},
   };
 
 
   //先把配置写死
   const int dim = 128;
-  const std::vector<int> sizes = {10000, 100000};
+  const std::vector<int> sizes = {10000, 100000,1000000};
   const int num_queries = 1000;
   const int topk = 10;
   const uint32_t seed = 20260121;
