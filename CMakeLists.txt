@@ -28,3 +28,7 @@ target_compile_features(bench_runner PRIVATE cxx_std_20)
 target_include_directories(bench_runner PRIVATE
         ${CMAKE_SOURCE_DIR}/include
 )
+#寻找 OpenwrtMP(多线程支持)
+find_package(OpenMP REQUIRED)
+#把OpenMP库链接到bench_runner
+target_link_libraries(bench_runner PRIVATE OpenMP::OpenMP_CXX  )

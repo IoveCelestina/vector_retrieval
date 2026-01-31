@@ -201,7 +201,10 @@ function SearchOne(query_vec, topK):
         __m256 _mm256_add_ps(__m256 a, __m256 b); // a+b
         ```
 
-        
+  - `void _mm_prefetch(char const* p, int hint);`
+
+    - `p` :要预取的地址，注意类型是`char const *`
+    - `hint` 预取到那个缓存层/策略的提示
 
 #### 内存预取
 
@@ -212,3 +215,11 @@ function SearchOne(query_vec, topK):
   ```
 
   - _MM_HINT_T0表示预期稍后会频繁使用,拉到所有缓存层
+
+
+
+#### 保留局部变量tag
+
+`local_cur_tag` 是`static thread_local` 变量，存储在线程局部存储(TLS,Thread Local Storage) 区域，本质是一块特殊的内存,每次写`local_cur_tag`，cpu都要去计算TLS偏移量，然后去内存读这个值.
+
+`tag` 是普通的局部栈变量,在开启`-O3`优化后，编译器会把它丢进寄存器里(Register)

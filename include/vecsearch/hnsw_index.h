@@ -6,6 +6,8 @@
 
 
 #include "vecsearch/index.h"
+#include<mutex> //创建锁
+#include<memory> //管理内存 std::unique_ptr
 
 namespace vecsearch {
 	struct HNSWParams {//参数,看README
@@ -67,7 +69,7 @@ namespace vecsearch {
   		IndexConfig cfg_;
   		HNSWParams p_;
 
-  		// row-major存
+  		// row-major存数据
   		std::vector<Id> ids_;        // size = N
   		std::vector<float> data_;    // size = N * dim
 
@@ -75,8 +77,8 @@ namespace vecsearch {
   		// 默认 id = 0..N-1 这样
   		std::vector<std::vector<Id>> graph_;
 
-		mutable std::vector<std::uint32_t> visited_tag_;//避免每次search_layer_分配数组，由于函数是const，但我们需要再里面修改成员变量的值,所以要用mutable
-		mutable std::uint32_t cur_tag_ = 1;
+		//锁数组,每个节点有一把锁，用unique_ptr是因为锁不可以被复制，只能用指针管理
+		std::vector<std::unique_ptr<std::mutex>> locks_;
 	};
 
 };

@@ -29,8 +29,7 @@ namespace vecsearch {
 		graph_.clear();
 		has_entry_=false;
 		entry_= 0;
-		visited_tag_.clear();
-		cur_tag_= 1;
+		locks_.clear();
 	}
 
 	std::string HNSWIndex::params()const {
@@ -91,24 +90,28 @@ namespace vecsearch {
 		if (ef<=0) return{};
 		if ((std::size_t)entry>=ids_.size()) return {};
 
+		//使用static thread_local定义线程局部变量
+		//每个线程第一次调用时会创建一个独立的local_visited_tag,后续调用会复用没有malloc开销且线程安全
+		static thread_local std::vector<std::uint32_t> local_visited_tag;
+		//还是需要保留tag去实现O(1)清空===========
+		static thread_local std::uint32_t local_cur_tag=0;
+
+		//因为是线程局部的，当主ids_扩容时，这里的局部副本也需要跟随扩容
+		if(local_visited_tag.size()<ids_.size())  local_visited_tag.resize(ids_.size());
+
+		//local tag++,处理溢出
+		++local_cur_tag;
+		if (local_cur_tag==0) {
+			std::fill(local_visited_tag.begin(),local_visited_tag.end(),0);
+			local_cur_tag = 1;
+		}
+		std::uint32_t tag = local_cur_tag;//兼容之前写的
+
 		auto cmp_MinHeap=[&](const Neighbor &a,const Neighbor &b){return a.dist>b.dist;};
 		auto cmp_MAXHeap=[&](const Neighbor &a,const Neighbor &b){return a.dist<b.dist;};
 		std::priority_queue<Neighbor, std::vector<Neighbor>,decltype(cmp_MinHeap)> candidates(cmp_MinHeap);
 		std::priority_queue<Neighbor,std::vector<Neighbor>,decltype(cmp_MAXHeap)> best(cmp_MAXHeap);
 		//先写id连续的版本
-		// search_layer_ 不负责扩容 visited_tag_
-		if (visited_tag_.size() != ids_.size()) {
-			std::cerr << "visited_tag_ not sized, call resize before search_layer_\n";
-			std::exit(1);
-		}
-
-		//tag++,处理溢出
-		std::uint32_t tag = ++cur_tag_;
-		if (tag==0) {
-			std::fill(visited_tag_.begin(),visited_tag_.end(),0);
-			tag = ++cur_tag_;
-		}
-
 
 		//初始化,把entry这个入口发进去
 		const float* entry_vsc = &data_[(size_t)entry*(size_t)cfg_.dim];
@@ -118,7 +121,7 @@ namespace vecsearch {
 		candidates.push(e);
 		best.push(e);
 		//visited.insert(entry);
-		visited_tag_[entry]=tag;
+		local_visited_tag[entry]=tag;
 
 		while (!candidates.empty()) {
 			Neighbor cur = candidates.top();
@@ -136,7 +139,7 @@ namespace vecsearch {
 			//=================内存预取开始=================
 			//提前告诉CPU把邻居的向量数据从内存拉到L1缓存
 			for (const auto& nb : neighbors) {
-				if ((std::size_t)nb>=visited_tag_.size()||visited_tag_[nb]==tag) continue;
+				if ((std::size_t)nb>=local_visited_tag.size()||local_visited_tag[nb]==tag) continue;
 				// 计算该邻居向量在data_中的内存地址
 				const char* vec= reinterpret_cast<const char*>(&data_[(std::size_t)nb * (std::size_t)cfg_.dim]);
 				//_MM_HINT_T0表示预期稍后会频繁使用,拉到所有缓存层
@@ -148,8 +151,8 @@ namespace vecsearch {
 			for (Id nb: neighbors) {
 				// if (visited.find(nb)!=visited.end()) continue;
 				// visited.insert(nb);
-				if ((size_t)nb>=visited_tag_.size()||visited_tag_[nb]==tag) continue;
-				visited_tag_[nb]=tag;
+				if ((std::size_t)nb>=local_visited_tag.size()||local_visited_tag[nb]==tag) continue;
+				local_visited_tag[nb]=tag;
 				const float *nb_vec = &data_[(size_t)nb*(size_t)cfg_.dim];
 				float d = dist_l2_sqr(nb_vec,target);
 
@@ -344,19 +347,21 @@ namespace vecsearch {
 			uniq.erase(std::unique(uniq.begin(), uniq.end()), uniq.end());
 		}
 
-		// 连接
-		for (Id nb : uniq) {
-			graph_[u].push_back(nb);
-			graph_[nb].push_back(u);
-		}
-
-		// prune u
-		if ((int)graph_[u].size() > p_.M) {
-			prune_neighbors_by_distance_(u, graph_[u], p_.M);
-		}
+		//更新当前节点u,必须加大括号限制锁的范围
+		{
+			std::lock_guard<std::mutex> lock(*locks_[u]);
+			for (Id nb : uniq) {
+				graph_[u].emplace_back(nb);
+			}
+			if ((int)graph_[u].size() > p_.M) {
+				prune_neighbors_by_distance_(u, graph_[u], p_.M);
+			}
+		}//出这个括号锁自动释放
 
 		// prune nb
 		for (Id nb : uniq) {
+			std::lock_guard<std::mutex> lock(*locks_[nb]);
+			graph_[nb].emplace_back(u);
 			if ((int)graph_[nb].size() > p_.M) {
 				prune_neighbors_by_distance_(nb, graph_[nb], p_.M);
 			}
@@ -380,6 +385,13 @@ namespace vecsearch {
 		ids_.reserve(oldN+n);
 		data_.reserve((oldN+n) * dim);
 		graph_.reserve(oldN+n);
+		//初始化locks_
+		if (locks_.size() < oldN+n) {
+			locks_.reserve(oldN+n);
+			for (std::size_t i = locks_.size();i<oldN+n;i++) {
+				locks_.emplace_back(std::make_unique<std::mutex>());
+			}
+		}
 
 		for (std::size_t  i = 0;i<n;++i) {
 			const Id expected_id = (Id)(oldN + i);
@@ -399,23 +411,33 @@ namespace vecsearch {
 			has_entry_ = true;
 			entry_=0;
 		}
-
-		if (visited_tag_.size() < ids_.size()) visited_tag_.resize(ids_.size(), 0);//确保search_layer_不会越界
-
 		//对新插入的点建图
 		//如果oldN=0，第0个点作为入口不需要连边，从u=1开始
 		std::size_t start_u = (oldN==0)?1:oldN;
+		//循环开始前,把当前的entry拿出来,存在局部变量里,这样循环里的所有线程都只读这个局部变量,互不干扰
+		//循环开始前,把当前的entry拿出来,存在局部变量里,这样循环里的所有线程都只读这个局部变量,互不干扰
+		Id current_entry = entry_;
+		#pragma omp parallel for schedule(dynamic)
 		for (std::size_t u = start_u;u<oldN+n;++u) {
 			const float *target = &data_[u*dim];
-			auto candidates = search_layer_(target,entry_,p_.ef_construction);
+			//使用局部变量进行搜索，都是读操作，线程安全
+			auto candidates = search_layer_(target,current_entry,p_.ef_construction);
+
 			auto neigh = select_neighbors_heuristic_((Id)u, candidates, p_.M);
-
-
 			//去掉自己保险一点
 			neigh.erase(std::remove(neigh.begin(), neigh.end(),(Id)u),neigh.end());
+
+			//连线,内部有锁,安全
 			connect_bidirectional_((Id)u, neigh);
-			entry_ = (Id)u;
+			//不在这里写entry_= u,优化性能
 		}
+
+		//等所有线程都干完活统一更新一次
+		//这里(oldN+n-1)就是这一批最后一个点的ID
+		if (oldN+n>0) {
+			entry_ = (Id)(oldN+n-1);
+		}
+		//局部读+统一写是高性能并行标准写法
 	}
 
 	// ===== search_one:查询 =====
