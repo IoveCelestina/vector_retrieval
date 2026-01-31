@@ -1,4 +1,7 @@
 D:\bin\cmake.exe -DCMAKE_BUILD_TYPE=Debug -G "MinGW Makefiles" -S C:\Users\29357\Desktop\vector_retrieval -B C:\Users\29357\Desktop\vector_retrieval\cmake-build-debug
--- Configuring done (0.1s)
+-- Found OpenMP_C: -fopenmp (found version "4.5")
+-- Found OpenMP_CXX: -fopenmp (found version "4.5")
+-- Found OpenMP: TRUE (found version "4.5")
+-- Configuring done (2.3s)
 -- Generating done (0.0s)
 -- Build files have been written to: C:/Users/29357/Desktop/vector_retrieval/cmake-build-debug

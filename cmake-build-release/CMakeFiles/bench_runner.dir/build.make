@@ -109,6 +109,11 @@ bench_runner_EXTERNAL_OBJECTS =
 bench_runner.exe: CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj
 bench_runner.exe: CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj
 bench_runner.exe: CMakeFiles/bench_runner.dir/build.make
+bench_runner.exe: D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/libgomp.dll.a
+bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a
+bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a
+bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a
+bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a
 bench_runner.exe: CMakeFiles/bench_runner.dir/linkLibs.rsp
 bench_runner.exe: CMakeFiles/bench_runner.dir/objects1.rsp
 bench_runner.exe: CMakeFiles/bench_runner.dir/link.txt
