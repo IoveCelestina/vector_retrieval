@@ -1,0 +1,1 @@
+ "D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/libgomp.dll.a" "D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a" "D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a" "D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a" "D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a" -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 
