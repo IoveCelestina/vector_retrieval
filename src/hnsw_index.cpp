@@ -513,8 +513,6 @@ namespace vecsearch {
 			}
 		}
 
-		//预先生成所有点的层数并拷贝数据
-		//需要先知道所有新点的层数才能找出这一批的最高点
 
 		std::vector<int> new_levels(n);
 		int batch_max_level = -1;
@@ -535,19 +533,42 @@ namespace vecsearch {
 				int M_max = (l==0) ?(p_.M<<1):p_.M;
 				graph_.back()[l].reserve(M_max+1);
 			}
-
-			//记录这一批里面的最高点
-			if (level>batch_max_level) {
-				batch_max_level = level;
-				batch_max_level_id = (Id)(oldN+i);
-			}
 		}
 
-		//抽根烟库初始化入口点
+		//如果是空图，先穿行插入种子，构建骨架
+		//之后第一批需要这样，后续直接并行即可
+		std::size_t seed_len = (oldN == 0) ? std::min(n, (std::size_t)1000) : 0;
+
 		if (oldN==0) {
-			//如果是空图，直接把这一批里最高的点作为入口
-			entry_point_ = batch_max_level_id;
-			current_max_level_ = batch_max_level;
+			entry_point_=0;
+			current_max_level_=new_levels[0];
+
+			for (std::size_t i = 1;i<seed_len;++i) {
+				std::size_t u = i;
+				int max_level = new_levels[i];
+				const float *target = &data_[u*dim];
+				Id curr_obj = entry_point_;
+
+				//降落
+				if (current_max_level_>max_level) {
+					curr_obj = greedy_descent_(target,entry_point_,current_max_level_, max_level);
+				}
+
+				//连边&搜索
+				for (int  l = std::min(max_level,current_max_level_);l>=0;--l) {
+					auto candidates = search_layer_(target,curr_obj,p_.ef_construction,l);
+					int M = (l == 0) ? (p_.M << 1) : p_.M;
+					auto selected = select_neighbors_heuristic_((Id)u,candidates,M);
+					connect_bidirectional_((Id)u,selected,l);
+					if (!candidates.empty()) curr_obj = candidates[0].id;
+				}
+
+				//动态更新入口
+				if (max_level > current_max_level_) {
+					current_max_level_ = max_level;
+					entry_point_ = (Id)u;
+				}
+			}
 		}
 
 
@@ -559,9 +580,8 @@ namespace vecsearch {
 		Id curr_global_entry = entry_point_;
 		int curr_global_max_level = current_max_level_;
 
-		// 如果这一批里有比原图更高的点，我们依然需要让它能够连接到原图的最高层
-		// 对于第一批数据 (oldN=0)，curr_global_max_level 已经是 batch_max_level 了，循环能跑满
-		std::size_t start_u = (oldN==0)?0:oldN;
+		//剩下的点,并行插入
+		std::size_t start_u = (oldN==0)?seed_len:oldN;
 
 		#pragma omp parallel for schedule(dynamic)
 		for (std::size_t u = start_u; u < oldN + n; ++u) {
