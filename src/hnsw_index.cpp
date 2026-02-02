@@ -380,16 +380,21 @@ namespace vecsearch {
             // 安全检查:防止该节点没有这一层 (虽然理论上entry保证了都在同一层)
             if (level >= (int)graph_[cur.id].size()) continue;
 
-            auto &neighbors = graph_[cur.id][level];
+        	std::vector<Id> neighbors_copy;
+            {
+            	// 锁住 cur.id，只为了安全地拷贝一份邻居列表
+            	std::lock_guard<std::mutex> lock(*node_locks_[cur.id]);
+            	neighbors_copy = graph_[cur.id][level];
+            }
 
             //内存预取 (Prefetch)
-            for (const auto& nb : neighbors) {
+            for (const auto& nb : neighbors_copy) {
                 if ((std::size_t)nb < local_visited_tag.size() && local_visited_tag[nb] != tag) {
                     const char* vec = reinterpret_cast<const char*>(&data_[(std::size_t)nb * (std::size_t)cfg_.dim]);
                     _mm_prefetch(vec, _MM_HINT_T0);
                 }
             }
-            for (Id nb : neighbors) {
+            for (Id nb : neighbors_copy) {
                 if ((std::size_t)nb >= local_visited_tag.size() || local_visited_tag[nb] == tag) continue;
                 local_visited_tag[nb] = tag;
 
@@ -599,8 +604,12 @@ namespace vecsearch {
 				if (l >= (int)graph_[curr_obj].size()) break;
 
 				// 贪婪搜索
-				const auto& neighbors = graph_[curr_obj][l];
-				for (Id nb : neighbors) {
+				std::vector<Id> neighbors_copy;
+				{
+					std::lock_guard<std::mutex> lock(*node_locks_[curr_obj]);
+					neighbors_copy = graph_[curr_obj][l];
+				}
+				for (Id nb : neighbors_copy) {
 					float d = dist_l2_sqr(&data_[nb * (size_t)cfg_.dim], target);
 					if (d < min_dist) {
 						min_dist = d;
