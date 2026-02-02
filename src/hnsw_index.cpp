@@ -380,21 +380,21 @@ namespace vecsearch {
             // 安全检查:防止该节点没有这一层 (虽然理论上entry保证了都在同一层)
             if (level >= (int)graph_[cur.id].size()) continue;
 
-        	std::vector<Id> neighbors_copy;
+        	static thread_local std::vector<Id> neighbors_buffer;
             {
             	// 锁住 cur.id，只为了安全地拷贝一份邻居列表
             	std::lock_guard<std::mutex> lock(*node_locks_[cur.id]);
-            	neighbors_copy = graph_[cur.id][level];
+            	neighbors_buffer = graph_[cur.id][level];
             }
 
             //内存预取 (Prefetch)
-            for (const auto& nb : neighbors_copy) {
+            for (const auto& nb : neighbors_buffer) {
                 if ((std::size_t)nb < local_visited_tag.size() && local_visited_tag[nb] != tag) {
                     const char* vec = reinterpret_cast<const char*>(&data_[(std::size_t)nb * (std::size_t)cfg_.dim]);
                     _mm_prefetch(vec, _MM_HINT_T0);
                 }
             }
-            for (Id nb : neighbors_copy) {
+            for (Id nb : neighbors_buffer) {
                 if ((std::size_t)nb >= local_visited_tag.size() || local_visited_tag[nb] == tag) continue;
                 local_visited_tag[nb] = tag;
 
@@ -513,7 +513,13 @@ namespace vecsearch {
 			}
 		}
 
-		//拷贝数据&初始化图结构
+		//预先生成所有点的层数并拷贝数据
+		//需要先知道所有新点的层数才能找出这一批的最高点
+
+		std::vector<int> new_levels(n);
+		int batch_max_level = -1;
+		Id batch_max_level_id = 0;
+
 		for (std::size_t i = 0;i<n;++i) {
 			ids_.emplace_back(ids[i]);
 			const float *vec  = &vectors[i*dim];
@@ -521,7 +527,7 @@ namespace vecsearch {
 
 			//决定层数
 			int level = get_random_level();
-
+			new_levels[i] = level;
 			//初始化graph_[u],他有level+1层
 			graph_.emplace_back(level+1);
 			for (int l = 0;l<=level;++l) {
@@ -529,38 +535,50 @@ namespace vecsearch {
 				int M_max = (l==0) ?(p_.M<<1):p_.M;
 				graph_.back()[l].reserve(M_max+1);
 			}
+
+			//记录这一批里面的最高点
+			if (level>batch_max_level) {
+				batch_max_level = level;
+				batch_max_level_id = (Id)(oldN+i);
+			}
 		}
 
-		//处理第一个点，如果全时控图
+		//抽根烟库初始化入口点
 		if (oldN==0) {
-			//第一个点直接是入口
-			entry_point_ = 0;
-			current_max_level_ = (int)graph_[0].size() - 1;//从第一个点开始插入
+			//如果是空图，直接把这一批里最高的点作为入口
+			entry_point_ = batch_max_level_id;
+			current_max_level_ = batch_max_level;
 		}
 
 
 		//并行插入，我们需要一个局部的entry_point和max_level避免竞争
 		//但在addbatch过程中,简化可以让所有新店都给予老图的入口开始搜提升并发性能
+		//如果old>0,用全局已有的current_max_level_,但在 batch 结束后会更新
+		/// 如果 oldN == 0，我们在上面已经将其设为了这一批的最大值，保证了连接循环不会被截断
 
 		Id curr_global_entry = entry_point_;
 		int curr_global_max_level = current_max_level_;
 
-		std::size_t start_u = (oldN==0)?1:oldN;
+		// 如果这一批里有比原图更高的点，我们依然需要让它能够连接到原图的最高层
+		// 对于第一批数据 (oldN=0)，curr_global_max_level 已经是 batch_max_level 了，循环能跑满
+		std::size_t start_u = (oldN==0)?0:oldN;
 
 		#pragma omp parallel for schedule(dynamic)
 		for (std::size_t u = start_u; u < oldN + n; ++u) {
-			int max_level = (int)graph_[u].size()-1;
+			int max_level = new_levels[u-oldN];
 			const float* target = &data_[u*dim];
 
 			Id curr_obj = curr_global_entry;//从全局入口开始
 			//第一步快速降落从全局最高层->节点u的最高层
 			//这一步只移动 curr_obj,不连线
 			if (curr_global_max_level>max_level) {
-				curr_obj = greedy_descent_(target,curr_global_entry,current_max_level_,max_level);
+				curr_obj = greedy_descent_(target,curr_global_entry,curr_global_max_level,max_level);
 			}
 
 
 			//第二步边搜边连,从u的最高层->0层
+			//连接范围应该是min(max_level,global_max)
+			//对于oldN==0,global_max已经是batch的最大值，这里不会被截断
 			for (int l = std::min(max_level,curr_global_max_level);l>=0;--l) {
 				//在第l层精细搜索(ef=efConstruction)
 				//需要高在search_layer_，让他支持指定level
@@ -573,20 +591,18 @@ namespace vecsearch {
 				//双向连边,理念会加锁是安全的
 				connect_bidirectional_((Id)u,selected,l);
 
-				curr_obj = candidates[0].id;//已经是排好序的
+				if (!candidates.empty()) curr_obj = candidates[0].id;//已经是排好序的
 
 			}
+
+
 
 		}
 
 
-		//更新全局入口
-		for (std::size_t u = start_u; u<oldN + n; ++u) {
-			int lvl = (int)graph_[u].size()-1;
-			if (lvl>curr_global_max_level) {
-				curr_global_max_level = lvl;
-				entry_point_ = (Id)u;
-			}
+		if (batch_max_level>current_max_level_) {
+			current_max_level_ = batch_max_level;
+			entry_point_ = batch_max_level_id;
 		}
 
 
@@ -594,17 +610,16 @@ namespace vecsearch {
 
 	Id HNSWIndex::greedy_descent_(const float *target, Id entry, int from_level, int to_level) const {
 		Id curr_obj = entry;
+		static thread_local std::vector<Id> neighbors_copy;
+
 		for (int l = from_level; l > to_level; --l) {
 			bool changed = true;
 			while (changed) {
 				changed = false;
 				float min_dist = dist_l2_sqr(&data_[curr_obj * (size_t)cfg_.dim], target);
-
 				// 安全检查
 				if (l >= (int)graph_[curr_obj].size()) break;
-
 				// 贪婪搜索
-				std::vector<Id> neighbors_copy;
 				{
 					std::lock_guard<std::mutex> lock(*node_locks_[curr_obj]);
 					neighbors_copy = graph_[curr_obj][l];
@@ -654,7 +669,7 @@ namespace vecsearch {
 		#pragma omp parallel for schedule(dynamic)
 	    for (int i = 0; i < num_queries; ++i) {
 	      const float* q = &queries[(std::size_t)i * (std::size_t)cfg_.dim];
-	      out.push_back(search_one(q, topk));
+	      out[i]  = search_one(q,topk);
 	    }
 	    return out;
 	}
