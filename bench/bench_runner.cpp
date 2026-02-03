@@ -324,8 +324,8 @@ int main() {
   const std::vector<Case> cases = {
     {"baseline_bruteforce", ""},
     // {"hnsw","M=16;efc=200;efs=50"},
-    // {"hnsw", "M=32;efC=200;efS=400"},
-    {"hnsw", "M=64;efC=200;efS=512"},
+    {"hnsw", "M=32;efC=200;efS=400"},
+    // {"hnsw", "M=64;efC=200;efS=512"},
     // {"hnsw", "M=32;efC=200;efS=100"},
     // {"hnsw", "M=32;efC=200;efS=200"},
   };

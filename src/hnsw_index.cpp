@@ -66,7 +66,12 @@ namespace vecsearch {
 			__m256 v1 = _mm256_loadu_ps(a + i);
 			__m256 v2 = _mm256_loadu_ps(b + i);
 			__m256 diff = _mm256_sub_ps(v1, v2);
+#if defined(__FMA__)
 			sum = _mm256_fmadd_ps(diff, diff, sum);
+#else
+			__m256 mul = _mm256_mul_ps(diff, diff);
+			sum = _mm256_add_ps(sum, mul);
+#endif
 		}
 
 		// 寄存器内水平求和
@@ -221,8 +226,7 @@ namespace vecsearch {
     const std::size_t dim = (std::size_t)cfg_.dim;
 
     // 限制候选池大小,减少 cand-vs-selected 的距离计算
-    const int L = std::min<int>((int)candidates.size(), std::max((3 * M) / 2, M));
-
+    const int L = candidates.size();
 
     // search_layer_返回的candidates 已经是按dist 升序
     // 所以这里直接截断前L个即可，不再排序/不再nth_element
@@ -329,6 +333,28 @@ namespace vecsearch {
 		for (const auto &x : res) neighbor_list.push_back(x.id);
 	}
 
+
+	void HNSWIndex::prune_neighbors_heuristic_(Id center, std::vector<Id> &neighbor_list, int M) {
+		if ((int)neighbor_list.size()<=M) return;
+		std::vector<Neighbor> cands;
+		cands.reserve(neighbor_list.size());
+		const float* center_vsc = &data_[(size_t)center*(size_t)cfg_.dim];
+
+		for (Id nb:neighbor_list) {
+			if (nb==center||(std::size_t)nb>=ids_.size()) continue;
+				float d = dist_l2_sqr(&data_[(size_t)nb*(size_t)cfg_.dim],center_vsc);
+				cands.emplace_back(nb,d);
+		}
+		std::sort(cands.begin(), cands.end(),[](const Neighbor &a,const Neighbor &b) {
+			return a.dist<b.dist;
+		});
+
+		auto selected = select_neighbors_heuristic_(center, cands, M);
+		neighbor_list = std::move(selected);
+
+	}
+
+
 	std::vector<Neighbor> HNSWIndex::search_layer_(const float* target, Id entry, int ef, int level) const {
         // 基础检查
         if (ids_.empty()) return {};
@@ -374,7 +400,7 @@ namespace vecsearch {
             candidates.pop();
 
             float worst_dist = best.top().dist;
-            if (cur.dist > worst_dist) break; // 剪枝:当前最近的候选比best里最差的还远,没必要找了
+            if ((int)best.size() >= ef && cur.dist > worst_dist) break; // 剪枝:当前最近的候选比best里最差的还远且best够了,没必要找了
 
             // 访问 graph_[cur.id]的第[level] 层
             // 安全检查:防止该节点没有这一层 (虽然理论上entry保证了都在同一层)
@@ -466,7 +492,7 @@ namespace vecsearch {
                 }
                 // 如果边太多,裁剪
                 if ((int)graph_[u][level].size() > M_max) {
-                    prune_neighbors_by_distance_(u, graph_[u][level], M_max);
+                    prune_neighbors_heuristic_(u, graph_[u][level], M_max);
                 }
             }
         }
@@ -484,7 +510,7 @@ namespace vecsearch {
 
             // 裁剪 nb 的边
             if ((int)graph_[nb][level].size() > M_max) {
-                prune_neighbors_by_distance_(nb, graph_[nb][level], M_max);
+                prune_neighbors_heuristic_(nb, graph_[nb][level], M_max);
             }
         }
     }
@@ -518,52 +544,69 @@ namespace vecsearch {
 		int batch_max_level = -1;
 		Id batch_max_level_id = 0;
 
-		for (std::size_t i = 0;i<n;++i) {
-			ids_.emplace_back(ids[i]);
-			const float *vec  = &vectors[i*dim];
-			data_.insert(data_.end(), vec, vec+dim);
 
-			//决定层数
-			int level = get_random_level();
-			new_levels[i] = level;
-			//初始化graph_[u],他有level+1层
-			graph_.emplace_back(level+1);
-			for (int l = 0;l<=level;++l) {
-				//Mmax:第0层用M<<1,其它层用M,小优化
-				int M_max = (l==0) ?(p_.M<<1):p_.M;
-				graph_.back()[l].reserve(M_max+1);
+		for (std::size_t i = 0;i<n;++i) {
+			new_levels[i] = get_random_level();
+			if (new_levels[i] > batch_max_level) {
+				batch_max_level = new_levels[i];
+				batch_max_level_id = (Id)(oldN+i);
 			}
 		}
 
-		//如果是空图，先穿行插入种子，构建骨架
-		//之后第一批需要这样，后续直接并行即可
-		std::size_t seed_len = (oldN == 0) ? std::min(n, (std::size_t)1000) : 0;
+		//提升recall的做法，如果是第一批数据，强制吧最高点换到第0点
+		//这样entry_point 一上来就是最高层,我们需要维护一个映射数组,避免物理移动vectors数据太慢
+		std::vector<std::size_t> permuitation(n);
+		for (std::size_t i = 0;i<n;++i) permuitation[i] = i;
 
 		if (oldN==0) {
-			entry_point_=0;
-			current_max_level_=new_levels[0];
+			std::swap(permuitation[0],permuitation[batch_max_level_id]);
+			//注意new_levels也要跟着换，方便后面直接查
+			std::swap(new_levels[0],new_levels[batch_max_level_id]);
+		}
 
-			for (std::size_t i = 1;i<seed_len;++i) {
-				std::size_t u = i;
-				int max_level = new_levels[i];
-				const float *target = &data_[u*dim];
-				Id curr_obj = entry_point_;
+		//开始真正插入,所有访问都要经过permutation
+		for (std::size_t i = 0;i<n;++i) {
+			std::size_t real_idx = permuitation[i];
+			ids_.emplace_back(ids[real_idx]);
+			const float *vec = &vectors[real_idx*dim];
+			data_.insert(data_.end(), vec, vec+dim);
+
+			int level = new_levels[i];//这里的new_levels已经交换过了
+
+			graph_.emplace_back(level+1);
+			for (int l = 0;l<=level;++l) {
+				int M_max = (l==0)?(p_.M<<1):p_.M;
+				graph_.back()[l].reserve(M_max+1);
+			}
+		}
+		//seeding 串行插入骨架
+		std::size_t seed_len = (oldN==0)?std::min(n,(std::size_t)1000):0;
+
+		if (oldN==0) {
+			entry_point_= 0;
+			current_max_level_ = new_levels[0];// 此时 new_levels[0] 已经是 batch_max_val 了！
+
+			//注意数据已经是按permutation顺序存入ids_和data_了，在后面直接访问data_即可
+
+			for (std::size_t u = 1;u<seed_len;++u) {
+				int max_level = new_levels[u];//直接取
+				const float *target = &data_[u*dim];//vector是原始乱序的，而我们在seeding过程是经过交换的，写成&vectors是错误的
 
 				//降落
-				if (current_max_level_>max_level) {
+				Id curr_obj = entry_point_;
+				if (current_max_level_ > max_level) {
 					curr_obj = greedy_descent_(target,entry_point_,current_max_level_, max_level);
 				}
-
 				//连边&搜索
-				for (int  l = std::min(max_level,current_max_level_);l>=0;--l) {
-					auto candidates = search_layer_(target,curr_obj,p_.ef_construction,l);
+				for (int l = std::min(max_level,current_max_level_);l>=0;--l) {
+					auto candidates = search_layer_(target, curr_obj, p_.ef_construction, l);
 					int M = (l == 0) ? (p_.M << 1) : p_.M;
-					auto selected = select_neighbors_heuristic_((Id)u,candidates,M);
-					connect_bidirectional_((Id)u,selected,l);
+					auto selected = select_neighbors_heuristic_((Id)u, candidates, M);
+					connect_bidirectional_((Id)u, selected, l);
 					if (!candidates.empty()) curr_obj = candidates[0].id;
 				}
 
-				//动态更新入口
+				//更新入口
 				if (max_level > current_max_level_) {
 					current_max_level_ = max_level;
 					entry_point_ = (Id)u;
@@ -572,13 +615,10 @@ namespace vecsearch {
 		}
 
 
-		//并行插入，我们需要一个局部的entry_point和max_level避免竞争
-		//但在addbatch过程中,简化可以让所有新店都给予老图的入口开始搜提升并发性能
-		//如果old>0,用全局已有的current_max_level_,但在 batch 结束后会更新
-		/// 如果 oldN == 0，我们在上面已经将其设为了这一批的最大值，保证了连接循环不会被截断
 
 		Id curr_global_entry = entry_point_;
 		int curr_global_max_level = current_max_level_;
+		//这里的curr_global_max_level现在已经是最高层了
 
 		//剩下的点,并行插入
 		std::size_t start_u = (oldN==0)?seed_len:oldN;
@@ -612,21 +652,24 @@ namespace vecsearch {
 				connect_bidirectional_((Id)u,selected,l);
 
 				if (!candidates.empty()) curr_obj = candidates[0].id;//已经是排好序的
-
 			}
-
-
-
 		}
 
-
+		//最后的全局更新,如果oldN>0,(追加数据),新数据可能比老数据层数更高
+		//如果oldN==0,这一步多余的因为第0个就是最高
 		if (batch_max_level>current_max_level_) {
-			current_max_level_ = batch_max_level;
-			entry_point_ = batch_max_level_id;
+			//找到这个最高点的新Id，如果是追加插入,batch_max_level_id是相对permutatuion的
+			//暴力的做法，便利一下new_levels找到他
+			for (std::size_t i = 0;i<n;++i) {
+				if (new_levels[i]==batch_max_level) {
+					current_max_level_ = new_levels[i];
+					entry_point_ = (Id)(oldN+i);
+					break;
+				}
+			}
 		}
-
-
 	}
+
 
 	Id HNSWIndex::greedy_descent_(const float *target, Id entry, int from_level, int to_level) const {
 		Id curr_obj = entry;

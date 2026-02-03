@@ -64,6 +64,9 @@ namespace vecsearch {
 
 		std::vector<Id> select_neighbors_heuristic_(Id center, std::vector<Neighbor>& candidates, int M) const;
 
+		void prune_neighbors_heuristic_(Id center,
+										  std::vector<Id>& neighbor_list,
+										  int M);
  		private:
   		IndexConfig cfg_;
   		HNSWParams p_;
