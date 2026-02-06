@@ -105,185 +105,67 @@ namespace vecsearch {
 	}
 
 
-
-	//SearchLayer，重要的？
-	// std::vector<Neighbor> HNSWIndex::search_layer_(const float *target, Id entry, int ef) const {
-	// 	if (ids_.empty()) return {};
-	// 	if (ef<=0) return{};
-	// 	if ((std::size_t)entry>=ids_.size()) return {};
-	//
-	// 	//使用static thread_local定义线程局部变量
-	// 	//每个线程第一次调用时会创建一个独立的local_visited_tag,后续调用会复用没有malloc开销且线程安全
-	// 	static thread_local std::vector<std::uint32_t> local_visited_tag;
-	// 	//还是需要保留tag去实现O(1)清空===========
-	// 	static thread_local std::uint32_t local_cur_tag=0;
-	//
-	// 	//因为是线程局部的，当主ids_扩容时，这里的局部副本也需要跟随扩容
-	// 	if(local_visited_tag.size()<ids_.size())  local_visited_tag.resize(ids_.size());
-	//
-	// 	//local tag++,处理溢出
-	// 	++local_cur_tag;
-	// 	if (local_cur_tag==0) {
-	// 		std::fill(local_visited_tag.begin(),local_visited_tag.end(),0);
-	// 		local_cur_tag = 1;
-	// 	}
-	// 	std::uint32_t tag = local_cur_tag;//兼容之前写的
-	//
-	// 	auto cmp_MinHeap=[&](const Neighbor &a,const Neighbor &b){return a.dist>b.dist;};
-	// 	auto cmp_MAXHeap=[&](const Neighbor &a,const Neighbor &b){return a.dist<b.dist;};
-	// 	std::priority_queue<Neighbor, std::vector<Neighbor>,decltype(cmp_MinHeap)> candidates(cmp_MinHeap);
-	// 	std::priority_queue<Neighbor,std::vector<Neighbor>,decltype(cmp_MAXHeap)> best(cmp_MAXHeap);
-	// 	//先写id连续的版本
-	//
-	// 	//初始化,把entry这个入口发进去
-	// 	const float* entry_vsc = &data_[(size_t)entry*(size_t)cfg_.dim];
-	// 	float d0 = dist_l2_sqr(entry_vsc,target);
-	//
-	// 	Neighbor e{entry,d0};
-	// 	candidates.push(e);
-	// 	best.push(e);
-	// 	//visited.insert(entry);
-	// 	local_visited_tag[entry]=tag;
-	//
-	// 	while (!candidates.empty()) {
-	// 		Neighbor cur = candidates.top();
-	// 		candidates.pop();
-	// 		//剪枝:当前候选比best最差还差，stop
-	//
-	// 		float worst = best.top().dist;
-	// 		if (cur.dist>worst) {
-	// 			break;
-	// 		}
-	//
-	// 		//扩展邻居
-	// 		auto &neighbors = graph_[cur.id];
-	//
-	// 		//=================内存预取开始=================
-	// 		//提前告诉CPU把邻居的向量数据从内存拉到L1缓存
-	// 		for (const auto& nb : neighbors) {
-	// 			if ((std::size_t)nb>=local_visited_tag.size()||local_visited_tag[nb]==tag) continue;
-	// 			// 计算该邻居向量在data_中的内存地址
-	// 			const char* vec= reinterpret_cast<const char*>(&data_[(std::size_t)nb * (std::size_t)cfg_.dim]);
-	// 			//_MM_HINT_T0表示预期稍后会频繁使用,拉到所有缓存层
-	// 			_mm_prefetch(vec, _MM_HINT_T0);
-	// 		}
-	// 		// ============内存预取结束====================
-	//
-	//
-	// 		for (Id nb: neighbors) {
-	// 			// if (visited.find(nb)!=visited.end()) continue;
-	// 			// visited.insert(nb);
-	// 			if ((std::size_t)nb>=local_visited_tag.size()||local_visited_tag[nb]==tag) continue;
-	// 			local_visited_tag[nb]=tag;
-	// 			const float *nb_vec = &data_[(size_t)nb*(size_t)cfg_.dim];
-	// 			float d = dist_l2_sqr(nb_vec,target);
-	//
-	// 			//如果best<ef,或者nb比最差的好
-	// 			if ((int) best.size()<ef || d<best.top().dist) {
-	// 				Neighbor cand{nb,d};
-	// 				candidates.push(cand);
-	// 				best.push(cand);
-	//
-	// 				//超过ef弹出
-	// 				if ((int) best.size()>ef) best.pop();
-	// 			}
-	// 		}
-	// 	}
-	//
-	// 	std::vector<Neighbor> res;
-	// 	res.reserve(best.size());
-	// 	while (!best.empty()) {
-	// 		res.emplace_back(best.top());
-	// 		best.pop();
-	// 	}
-	// 	std::reverse(res.begin(),res.end());//这样就是从小到到大了
-	// 	return res;
-	// }
-	//
-	// // 简单的选邻居:按 dist 升序取前 M
-	// std::vector<Id> HNSWIndex::select_neighbors_simple_(std::vector<Neighbor>& candidates,
-	//                                                    int M) const {
-	// 	if (M <= 0 || candidates.empty()) return {};
-	// 	auto by_dist=[](const Neighbor &a,const Neighbor &b){return a.dist<b.dist;};
-	// 	if (candidates.size () > M) {
-	// 		std::nth_element(candidates.begin(),candidates.begin()+M,candidates.end(),by_dist);
-	// 		candidates.resize(M);
-	// 	}
-	// 	std::sort(candidates.begin(), candidates.end(),by_dist);
-	//
-	// 	std::vector<Id> out;
-	// 	out.reserve(candidates.size());
-	// 	for (const auto& x : candidates) out.push_back(x.id);
-	// 	return out;
-	// }
-
-
 	std::vector<Id> HNSWIndex::select_neighbors_heuristic_(Id center,
                                                       std::vector<Neighbor>& candidates,
                                                       int M) const {
-    if (M <= 0 || candidates.empty()) return {};
+	    if (M <= 0 || candidates.empty()) return {};
 
-    const std::size_t dim = (std::size_t)cfg_.dim;
+	    const std::size_t dim = (std::size_t)cfg_.dim;
 
-    // 限制候选池大小,减少 cand-vs-selected 的距离计算
-    const int L = candidates.size();
 
-    // search_layer_返回的candidates 已经是按dist 升序
-    // 所以这里直接截断前L个即可，不再排序/不再nth_element
-    if ((int)candidates.size() > L) {
-        candidates.resize(L);
-    }
+	    std::vector<Id> selected;
+	    selected.reserve((std::size_t)M);
 
-    std::vector<Id> selected;
-    selected.reserve((std::size_t)M);
+		//宽松因子,默认(1.0)严格RNG,可以稍微变大用于提升recall
+		//意思是及时neighbor离cand更近,只要没近太多,还是保留cand
+		const float alpha =1.05f;
+	    // Heuristic:避免邻居扎堆
+	    for (const auto& cand : candidates) {
+	        if ((int)selected.size() >= M) break;
 
-    // Heuristic:避免邻居扎堆
-    for (const auto& cand : candidates) {
-        if ((int)selected.size() >= M) break;
+	        const Id cid = cand.id;
+	        if (cid == center) continue;
+	        if ((std::size_t)cid >= ids_.size()) continue;
 
-        const Id cid = cand.id;
-        if (cid == center) continue;
-        if ((std::size_t)cid >= ids_.size()) continue;
+	        const float* cvec = &data_[(std::size_t)cid * dim];
 
-        const float* cvec = &data_[(std::size_t)cid * dim];
+	        bool good = true;
+	        for (Id sid : selected) {
+	            const float* svec = &data_[(std::size_t)sid * dim];
 
-        bool good = true;
-        for (Id sid : selected) {
-            const float* svec = &data_[(std::size_t)sid * dim];
+	            // 若 dist(cand, selected_neighbor) < dist(center, cand),说明 cand 与已有邻居太近
+	            const float d_cs = dist_l2_sqr(cvec, svec);
+	            if (d_cs * alpha < cand.dist) {
+	                good = false;
+	                break;
+	            }
+	        }
 
-            // 若 dist(cand, selected_neighbor) < dist(center, cand),说明 cand 与已有邻居太近
-            const float d_cs = dist_l2_sqr(cvec, svec);
-            if (d_cs < cand.dist) {
-                good = false;
-                break;
-            }
-        }
+	        if (good) selected.push_back(cid);
+	    }
 
-        if (good) selected.push_back(cid);
-    }
+	    // 不足 M：按中心距离从近到远补齐(在前 L 个里补就够了)
+	    if ((int)selected.size() < M) {
+	        for (const auto& cand : candidates) {
+	            if ((int)selected.size() >= M) break;
 
-    // 不足 M：按中心距离从近到远补齐(在前 L 个里补就够了)
-    if ((int)selected.size() < M) {
-        for (const auto& cand : candidates) {
-            if ((int)selected.size() >= M) break;
+	            const Id cid = cand.id;
+	            if (cid == center) continue;
+	            if ((std::size_t)cid >= ids_.size()) continue;
 
-            const Id cid = cand.id;
-            if (cid == center) continue;
-            if ((std::size_t)cid >= ids_.size()) continue;
+	            bool dup = false;
+	            for (Id sid : selected) {
+	                if (sid == cid) {
+	                    dup = true;
+	                    break;
+	                }
+	            }
+	            if (!dup) selected.push_back(cid);
+	        }
+	    }
 
-            bool dup = false;
-            for (Id sid : selected) {
-                if (sid == cid) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (!dup) selected.push_back(cid);
-        }
-    }
-
-    return selected;
-}
+	    return selected;
+	}
 
 
 	// 裁剪邻居表:按 dist(center, nb) 排序，保留前 M
@@ -366,8 +248,8 @@ namespace vecsearch {
         static thread_local std::uint32_t local_cur_tag = 0;
 
         // 扩容检查
-        if (local_visited_tag.size() < ids_.size()) {
-            local_visited_tag.resize(ids_.size(), 0);
+        if (local_visited_tag.size() < ids_.size()+100) {//加个buffer
+            local_visited_tag.resize(ids_.size()+100, 0);
         }
 
         //Tag更新(避免 memset)
@@ -543,13 +425,12 @@ namespace vecsearch {
 		std::vector<int> new_levels(n);
 		int batch_max_level = -1;
 		Id batch_max_level_id = 0;
-
-
+		std::size_t batch_max_level_local_id = 0;//内部最好的索引,不加oldN
 		for (std::size_t i = 0;i<n;++i) {
 			new_levels[i] = get_random_level();
 			if (new_levels[i] > batch_max_level) {
 				batch_max_level = new_levels[i];
-				batch_max_level_id = (Id)(oldN+i);
+				batch_max_level_local_id = i;
 			}
 		}
 
@@ -559,9 +440,16 @@ namespace vecsearch {
 		for (std::size_t i = 0;i<n;++i) permuitation[i] = i;
 
 		if (oldN==0) {
-			std::swap(permuitation[0],permuitation[batch_max_level_id]);
+			std::swap(permuitation[0],permuitation[batch_max_level_local_id]);
 			//注意new_levels也要跟着换，方便后面直接查
-			std::swap(new_levels[0],new_levels[batch_max_level_id]);
+			// std::swap(new_levels[0],new_levels[batch_max_level_local_id]);
+		}//batch_max_level_id 赋值的是全局id = oldN+i,当oldN==0时恰好等于i,一旦不等于0,batch_max_level_id会大于等于n，会越界
+
+
+		std::vector<int> levels_internal(n);
+		for (std::size_t i = 0; i < n; ++i) {
+			std::size_t real_idx = permuitation[i];
+			levels_internal[i] = new_levels[real_idx];
 		}
 
 		//开始真正插入,所有访问都要经过permutation
@@ -571,7 +459,8 @@ namespace vecsearch {
 			const float *vec = &vectors[real_idx*dim];
 			data_.insert(data_.end(), vec, vec+dim);
 
-			int level = new_levels[i];//这里的new_levels已经交换过了
+			int level = levels_internal[i];
+
 
 			graph_.emplace_back(level+1);
 			for (int l = 0;l<=level;++l) {
@@ -584,12 +473,12 @@ namespace vecsearch {
 
 		if (oldN==0) {
 			entry_point_= 0;
-			current_max_level_ = new_levels[0];// 此时 new_levels[0] 已经是 batch_max_val 了！
+			current_max_level_ = levels_internal[0];
 
 			//注意数据已经是按permutation顺序存入ids_和data_了，在后面直接访问data_即可
 
 			for (std::size_t u = 1;u<seed_len;++u) {
-				int max_level = new_levels[u];//直接取
+				int max_level = levels_internal[u];
 				const float *target = &data_[u*dim];//vector是原始乱序的，而我们在seeding过程是经过交换的，写成&vectors是错误的
 
 				//降落
@@ -598,13 +487,14 @@ namespace vecsearch {
 					curr_obj = greedy_descent_(target,entry_point_,current_max_level_, max_level);
 				}
 				//连边&搜索
-				for (int l = std::min(max_level,current_max_level_);l>=0;--l) {
-					auto candidates = search_layer_(target, curr_obj, p_.ef_construction, l);
+				for (int l = std::min(max_level, current_max_level_); l >= 0; --l) {
+					auto best = search_layer_(target, curr_obj, p_.ef_construction, l);
 					int M = (l == 0) ? (p_.M << 1) : p_.M;
-					auto selected = select_neighbors_heuristic_((Id)u, candidates, M);
+					auto selected = select_neighbors_heuristic_((Id)u, best, M);
 					connect_bidirectional_((Id)u, selected, l);
-					if (!candidates.empty()) curr_obj = candidates[0].id;
+					if (!best.empty()) curr_obj = best[0].id;
 				}
+
 
 				//更新入口
 				if (max_level > current_max_level_) {
@@ -620,52 +510,71 @@ namespace vecsearch {
 		int curr_global_max_level = current_max_level_;
 		//这里的curr_global_max_level现在已经是最高层了
 
-		//剩下的点,并行插入
+		//分块并行
 		std::size_t start_u = (oldN==0)?seed_len:oldN;
-
-		#pragma omp parallel for schedule(dynamic)
-		for (std::size_t u = start_u; u < oldN + n; ++u) {
-			int max_level = new_levels[u-oldN];
-			const float* target = &data_[u*dim];
-
-			Id curr_obj = curr_global_entry;//从全局入口开始
-			//第一步快速降落从全局最高层->节点u的最高层
-			//这一步只移动 curr_obj,不连线
-			if (curr_global_max_level>max_level) {
-				curr_obj = greedy_descent_(target,curr_global_entry,curr_global_max_level,max_level);
-			}
+		std::size_t end_u = oldN+n;
 
 
-			//第二步边搜边连,从u的最高层->0层
-			//连接范围应该是min(max_level,global_max)
-			//对于oldN==0,global_max已经是batch的最大值，这里不会被截断
-			for (int l = std::min(max_level,curr_global_max_level);l>=0;--l) {
-				//在第l层精细搜索(ef=efConstruction)
-				//需要高在search_layer_，让他支持指定level
+		const std::size_t chunk_size = 2000;
 
-				auto candidates = search_layer_(target,curr_obj,p_.ef_construction,l);
+		for (std::size_t chunk_start = start_u; chunk_start<end_u; chunk_start += chunk_size) {
+			std::size_t chunk_end = std::min(end_u,chunk_start+chunk_size);
 
-				//选邻居
-				int M = (l==0)?(p_.M<<1):p_.M;//0层允许更多的边
-				auto selected = select_neighbors_heuristic_((Id)u,candidates,M);
-				//双向连边,理念会加锁是安全的
-				connect_bidirectional_((Id)u,selected,l);
 
-				if (!candidates.empty()) curr_obj = candidates[0].id;//已经是排好序的
-			}
-		}
+			//获取当前最新的全局入口快照(由主线程读取,是安全的)
+			Id snapshot_entry = entry_point_;
+			int snapshot_max_level = current_max_level_;
 
-		//最后的全局更新,如果oldN>0,(追加数据),新数据可能比老数据层数更高
-		//如果oldN==0,这一步多余的因为第0个就是最高
-		if (batch_max_level>current_max_level_) {
-			//找到这个最高点的新Id，如果是追加插入,batch_max_level_id是相对permutatuion的
-			//暴力的做法，便利一下new_levels找到他
-			for (std::size_t i = 0;i<n;++i) {
-				if (new_levels[i]==batch_max_level) {
-					current_max_level_ = new_levels[i];
-					entry_point_ = (Id)(oldN+i);
-					break;
+			#pragma omp parallel for schedule(dynamic)
+			for (std::size_t u = chunk_start; u < chunk_end; ++u) {
+				int max_level = levels_internal[u - oldN];
+				const float* target = &data_[u * dim];
+
+				Id curr_obj = snapshot_entry; // 必须从已构建好的快照入口开始
+
+				// 先从全局最高层贪婪降落到 max_level+1（停在 max_level 层的入口附近）
+				if (snapshot_max_level > max_level) {
+					curr_obj = greedy_descent_(target, curr_obj, snapshot_max_level, max_level);
 				}
+
+				// 从 min(max_level, snapshot_max_level) 一路到 0 层：search + connect
+				for (int l = std::min(max_level, snapshot_max_level); l >= 0; --l) {
+					auto best = search_layer_(target, curr_obj, p_.ef_construction, l);
+
+					int M = (l == 0) ? (p_.M << 1) : p_.M;
+					auto selected = select_neighbors_heuristic_((Id)u, best, M);
+					connect_bidirectional_((Id)u, selected, l);
+
+					// 下一层入口：本层找到的最近点（best 已经是从近到远）
+					if (!best.empty()) curr_obj = best[0].id;
+				}
+			}
+
+
+			//并行结束,先找出当前 Chunk 内的"局部最强"
+			int chunk_max_level = -1;
+			Id chunk_best_id = 0;
+			for (std::size_t u = chunk_start; u < chunk_end; ++u) {
+				// new_levels 是相对 batch 的,u 是全局的，所以要减 oldN
+				int level = levels_internal[u - oldN];
+
+				// 这里使用 > 而不是 >=，意味着如果有多个同为最高层的点，
+				// 我们优先选择 ID 较小的（先遇到的）。
+				// 这样做有利于 Cache（旧数据可能更热），且保证确定性。
+				if (level > chunk_max_level) {
+					chunk_max_level = level;
+					chunk_best_id = (Id)u;
+				}
+			}
+
+			// 与全局比较,做一次性更新
+			if (chunk_max_level > current_max_level_) {
+				current_max_level_ = chunk_max_level;
+				entry_point_ = chunk_best_id;
+
+				// Debug Log
+				// std::cout << "Entry point updated to " << entry_point_
+				//           << " at level " << current_max_level_ << "\n";
 			}
 		}
 	}
@@ -688,6 +597,10 @@ namespace vecsearch {
 					neighbors_copy = graph_[curr_obj][l];
 				}
 				for (Id nb : neighbors_copy) {
+					// 让 CPU 提前拉取数据
+					_mm_prefetch((const char*)&data_[nb * (size_t)cfg_.dim], _MM_HINT_T0);
+				}
+				for (Id nb : neighbors_copy) {
 					float d = dist_l2_sqr(&data_[nb * (size_t)cfg_.dim], target);
 					if (d < min_dist) {
 						min_dist = d;
@@ -708,18 +621,21 @@ namespace vecsearch {
 		if (ids_.empty() || topk <= 0) return {};
 		if (current_max_level_==-1) return {};
 
-		// 快速降落 (复用 greedy_descent_)
-		// 从顶层一直降落到第 0 层之前（即停在第 1 层的结果，作为 0 层的入口）
-		Id curr_obj = greedy_descent_(q, entry_point_, current_max_level_, 0);
-
-
-
+		Id curr_obj = entry_point_;
+		for (int l = current_max_level_;l > 0;--l) {
+			// 在层 l 做纯贪心:一直找更近的邻居直到不能改进
+			curr_obj = greedy_descent_(q, curr_obj, l, l-1); // 或者写个 greedy_one_level(curr,l)
+		}
 
 		int ef = p_.ef_search;
 		if (ef < topk) ef = topk;
 		std::vector<Neighbor> best = search_layer_(q,curr_obj,ef,0);//找谁，入口，找几个(最多几个),第几层
 		//ef_search是候选集合大小上限，需要确保大于等于topk，返回的已经是升序，所以下一步不用排序
 		if (best.size()>topk) best.resize(topk);
+		for (auto &nb:best) {
+			nb.id = ids_[nb.id];
+			//关键，需要内部id变回外部id,因为我的bench_runner传了外部id,这是导致recall降低的关键原因
+		}
 		return best;
 	}
 

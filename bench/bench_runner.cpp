@@ -29,7 +29,7 @@ static vecsearch::HNSWParams ParseHNSWParamsOrDie(const std::string& para_str) {
   //支持;和,
   std::string s = para_str;
   for (char &c:s) {
-    if (c==',')c==';';
+    if (c==',') c=';';
   }
   std::stringstream ss(s);
   std::string item;
@@ -333,7 +333,7 @@ int main() {
 
   //先把配置写死
   const int dim = 128;
-  const std::vector<int> sizes = {1000000};
+  const std::vector<int> sizes = {100000};
   const int num_queries = 1000;
   const int topk = 10;
   const uint32_t seed = 20260121;
