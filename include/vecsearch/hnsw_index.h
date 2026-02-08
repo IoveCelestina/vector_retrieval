@@ -67,7 +67,9 @@ namespace vecsearch {
 		void prune_neighbors_heuristic_(Id center,
 										  std::vector<Id>& neighbor_list,
 										  int M);
- 		private:
+
+		void refine_level0(int ef_refine, int M0);
+
   		IndexConfig cfg_;
   		HNSWParams p_;
 

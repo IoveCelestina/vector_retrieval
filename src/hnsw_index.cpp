@@ -6,6 +6,9 @@
 #include <unordered_set>
 #include<array>
 #include<immintrin.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace vecsearch {
 	HNSWIndex::HNSWIndex(IndexConfig cfg,HNSWParams p):cfg_(cfg),p_(p) {
@@ -118,7 +121,7 @@ namespace vecsearch {
 
 		//宽松因子,默认(1.0)严格RNG,可以稍微变大用于提升recall
 		//意思是及时neighbor离cand更近,只要没近太多,还是保留cand
-		const float alpha =1.05f;
+		const float alpha =1.00f;
 	    // Heuristic:避免邻居扎堆
 	    for (const auto& cand : candidates) {
 	        if ((int)selected.size() >= M) break;
@@ -397,6 +400,130 @@ namespace vecsearch {
         }
     }
 
+	void HNSWIndex::refine_level0(int ef_refine, int M0) {
+	    if (ids_.empty()) return;
+	    if (current_max_level_ < 0) return;
+	    if ((std::size_t)entry_point_ >= ids_.size()) return;
+
+	    const std::size_t N   = ids_.size();
+	    const std::size_t dim = (std::size_t)cfg_.dim;
+
+	    if (ef_refine <= 0) ef_refine = p_.ef_construction;
+	    if (M0 <= 0)        M0 = (p_.M << 1);
+
+	    // 快照：保证一次 refine 内部入口一致（更可复现）
+	    const Id  ep   = entry_point_;
+	    const int maxL = current_max_level_;
+
+		std::vector<std::vector<Id>> new0(N);
+		#pragma omp parallel
+		{
+			std::vector<Id> old0;
+	    	std::vector<Id> cand;// union buffer
+	    	std::vector<Id> neigh;// union buffer
+
+	    	old0.reserve((std::size_t)M0);
+	    	cand.reserve((std::size_t)M0 << 2);
+	    	neigh.reserve((std::size_t)M0<<1);
+
+			#pragma omp for schedule(dynamic,128)
+	    	for (std::int64_t uu = 0; uu < (std::int64_t)N; ++uu) {
+	    		const Id u = (Id)uu;
+	    		const float *target = &data_[(std::size_t)u*dim];
+
+	    		//找到u在第0层附近的入口+search
+	    		Id curr = ep;
+	    		if (maxL > 0) curr = greedy_descent_(target, curr, maxL, 0);
+	    		auto best = search_layer_(target, curr, ef_refine, 0);
+	    		auto selected = select_neighbors_heuristic_(u, best, M0); // <=M0
+
+	    		//拷贝旧数据,只读,短锁
+	    		old0.clear();
+	    		{
+	    			std::lock_guard<std::mutex> lk(*node_locks_[u]);
+	    			if (!graph_[u].empty()) old0 = graph_[u][0];
+	    		}
+
+	    		//union(old0, selected) -> cand,并做过滤
+	    		cand.clear();
+	    		cand.insert(cand.end(), old0.begin(), old0.end());
+	    		cand.insert(cand.end(), selected.begin(), selected.end());
+
+	    		// 去重 + 合法性过滤（小数组线性，大数组 sort）
+	    		// 这里不需要检查 graph_[nb].empty()，0层节点一定有,只检查越界/自环
+	    		if (cand.size() <= 64) {
+	    			neigh.clear();
+	    			for (Id nb : cand) {
+	    				if (nb == u) continue;
+	    				if ((std::size_t)nb >= N) continue;
+	    				bool dup = false;
+	    				for (Id x : neigh) { if (x == nb) { dup = true; break; } }
+	    				if (!dup) neigh.push_back(nb);
+	    			}
+	    		} else {
+	    			cand.erase(std::remove_if(cand.begin(), cand.end(),
+							  [&](Id nb){ return nb==u || (std::size_t)nb>=N; }),
+							  cand.end());
+	    			std::sort(cand.begin(), cand.end());
+	    			cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+	    			neigh = cand; // 暂存
+	    		}
+
+	    		//prune到M0
+	    		if ((int)neigh.size() > M0) {
+	    			prune_neighbors_heuristic_(u, neigh, M0);
+	    		}
+
+	    		//写回 u 的 0 层邻居（短锁）
+	    		{
+	    			std::lock_guard<std::mutex> lk(*node_locks_[u]);
+	    			graph_[u][0] = neigh;
+	    		}
+	    		new0[u] = std::move(neigh);
+
+	    	}
+		}
+
+		for (Id u = 0;(std::size_t)u<N;++u) {
+			std::lock_guard<std::mutex> lk(*node_locks_[u]);
+			graph_[u][0] = std::move(new0[u]);
+		}
+
+		//统一重建对称边,收集反向边:rev[u]存所有指向u的点
+		std::vector<std::vector<Id>> rev(N);
+		for (Id u = 0; (std::size_t)u < N; ++u) {
+			// 这里读 graph_[u][0] 不加锁也行
+			for (Id nb : graph_[u][0]) {
+				if ((std::size_t)nb < N) rev[nb].push_back(u);
+			}
+		}
+
+
+		//合并并prune到M0
+		#pragma omp parallel for schedule(dynamic,128)
+		for (std::int64_t uu = 0; uu < (std::int64_t)N; ++uu) {
+			const Id u = (Id)uu;
+			std::vector<Id> merged;
+			merged.reserve((std::size_t)M0<<2);
+			{
+				std::lock_guard<std::mutex> lk(*node_locks_[u]);
+				merged = graph_[u][0];
+				merged.insert(merged.end(), rev[u].begin(), rev[u].end());
+				std::sort(merged.begin(), merged.end());
+				merged.erase(std::unique(merged.begin(), merged.end()), merged.end());
+				merged.erase(std::remove_if(merged.begin(), merged.end(),
+							[&](Id nb){ return nb==u || (std::size_t)nb>=N; }),
+							merged.end());
+				if ((int)merged.size() > M0) prune_neighbors_heuristic_(u, merged, M0);
+				graph_[u][0] = std::move(merged);
+			}
+		}
+
+
+    }
+
+
+
 
 	void HNSWIndex::add_batch(const std::vector<Id> &ids, const std::vector<float> &vectors) {
 		const std::size_t n = ids.size();
@@ -515,7 +642,7 @@ namespace vecsearch {
 		std::size_t end_u = oldN+n;
 
 
-		const std::size_t chunk_size = 2000;
+		const std::size_t chunk_size = 500;
 
 		for (std::size_t chunk_start = start_u; chunk_start<end_u; chunk_start += chunk_size) {
 			std::size_t chunk_end = std::min(end_u,chunk_start+chunk_size);
@@ -577,6 +704,7 @@ namespace vecsearch {
 				//           << " at level " << current_max_level_ << "\n";
 			}
 		}
+		refine_level0(p_.ef_construction,p_.M<<1);
 	}
 
 
@@ -622,7 +750,7 @@ namespace vecsearch {
 		if (current_max_level_==-1) return {};
 
 		Id curr_obj = entry_point_;
-		for (int l = current_max_level_;l > 0;--l) {
+		for (int l = current_max_level_;l>0;--l) {
 			// 在层 l 做纯贪心:一直找更近的邻居直到不能改进
 			curr_obj = greedy_descent_(q, curr_obj, l, l-1); // 或者写个 greedy_one_level(curr,l)
 		}

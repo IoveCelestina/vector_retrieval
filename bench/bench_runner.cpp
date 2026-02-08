@@ -15,7 +15,9 @@
 
 #include "../include/vecsearch/bruteforce_index.h"
 #include "../include/vecsearch/hnsw_index.h"
-
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 //解析函数
 static vecsearch::HNSWParams ParseHNSWParamsOrDie(const std::string& para_str) {
@@ -321,19 +323,22 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
 
 
 int main() {
-  const std::vector<Case> cases = {
-    {"baseline_bruteforce", ""},
-    // {"hnsw","M=16;efc=200;efs=50"},
-    {"hnsw", "M=32;efC=200;efS=400"},
-    // {"hnsw", "M=64;efC=200;efS=512"},
-    // {"hnsw", "M=32;efC=200;efS=100"},
-    // {"hnsw", "M=32;efC=200;efS=200"},
-  };
+#ifdef _OPENMP
+  // omp_set_num_threads(1);
+#endif
+
+    std::cerr << "[OMP] max_threads=" << omp_get_max_threads()
+        << " num_procs=" << omp_get_num_procs() << "\n";
+    const std::vector<Case> cases = {
+      {"baseline_bruteforce", ""},
+
+       {"hnsw", "M=48;efC=800;efS=800"},
+    };
 
 
   //先把配置写死
   const int dim = 128;
-  const std::vector<int> sizes = {100000};
+  const std::vector<int> sizes = {1000000};
   const int num_queries = 1000;
   const int topk = 10;
   const uint32_t seed = 20260121;
