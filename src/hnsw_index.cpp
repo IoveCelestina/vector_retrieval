@@ -6,9 +6,7 @@
 #include <unordered_set>
 #include<array>
 #include<immintrin.h>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+
 
 namespace vecsearch {
 	HNSWIndex::HNSWIndex(IndexConfig cfg,HNSWParams p):cfg_(cfg),p_(p) {
@@ -121,7 +119,7 @@ namespace vecsearch {
 
 		//宽松因子,默认(1.0)严格RNG,可以稍微变大用于提升recall
 		//意思是及时neighbor离cand更近,只要没近太多,还是保留cand
-		const float alpha =1.00f;
+		const float alpha =1.15f;
 	    // Heuristic:避免邻居扎堆
 	    for (const auto& cand : candidates) {
 	        if ((int)selected.size() >= M) break;
@@ -251,8 +249,8 @@ namespace vecsearch {
         static thread_local std::uint32_t local_cur_tag = 0;
 
         // 扩容检查
-        if (local_visited_tag.size() < ids_.size()+100) {//加个buffer
-            local_visited_tag.resize(ids_.size()+100, 0);
+        if (local_visited_tag.size() < ids_.size()) {
+            local_visited_tag.resize(ids_.size(), 0);
         }
 
         //Tag更新(避免 memset)
@@ -331,6 +329,83 @@ namespace vecsearch {
         std::reverse(res.begin(), res.end()); // 从近到远排序
         return res;
     }
+
+
+
+	std::vector<Neighbor> HNSWIndex::search_layer_multi_(const float* target,
+														 const std::vector<Id>& entries,
+														 int ef,
+														 int level) const {
+
+		if (ids_.empty()||ef<=0) return{};
+		const std::size_t N   = ids_.size();
+		const std::size_t dim = (std::size_t)cfg_.dim;
+
+		static thread_local std::vector<std::uint32_t> vis;
+		static thread_local std::uint32_t cur_tag = 0;
+		if (vis.size() < N) vis.resize(N, 0);
+
+		++cur_tag;
+		if (cur_tag == 0) { std::fill(vis.begin(), vis.end(), 0); cur_tag = 1; }
+		const std::uint32_t tag = cur_tag;
+
+		auto cmp_min = [&](const Neighbor& a, const Neighbor& b){ return a.dist > b.dist; };
+		auto cmp_max = [&](const Neighbor& a, const Neighbor& b){ return a.dist < b.dist; };
+
+		std::priority_queue<Neighbor, std::vector<Neighbor>, decltype(cmp_min)> candidates(cmp_min);
+		std::priority_queue<Neighbor, std::vector<Neighbor>, decltype(cmp_max)> best(cmp_max);
+
+		//多入口初始化
+		for (Id ep :entries) {
+			if ((std::size_t)ep<N) {
+				float d0 = dist_l2_sqr(&data_[(std::size_t)ep*dim], target);
+				Neighbor e{ep, d0};
+				candidates.push(e);
+				best.push(e);
+				vis[ep] = tag;
+			}
+		}
+		if (best.empty()) return {};
+		static thread_local std::vector<Id> neighbors_buffer;
+
+		while (!candidates.empty()) {
+			Neighbor cur = candidates.top();
+			candidates.pop();
+			float worst_dist = best.top().dist;
+			if ((int)best.size() >= ef && cur.dist > worst_dist) break;
+
+			if (level>=(int)graph_[cur.id].size()) continue;
+
+			{
+				std::lock_guard<std::mutex> lk(*node_locks_[cur.id]);
+				neighbors_buffer = graph_[cur.id][level];
+			}
+
+			for (Id nb:neighbors_buffer) {
+				if ((std::size_t)nb>=N) continue;
+				if (vis[nb]==tag) continue;
+				vis[nb] = tag;
+
+				float d = dist_l2_sqr(&data_[(std::size_t)nb*dim], target);
+				if ((int)best.size() < ef || d < best.top().dist) {
+					Neighbor cand{nb, d};
+					candidates.push(cand);
+					best.push(cand);
+					if ((int)best.size() > ef) best.pop();
+				}
+			}
+		}
+
+		std::vector<Neighbor> res;
+		res.reserve(best.size());
+		while (!best.empty()) {
+			res.emplace_back(best.top());
+			best.pop();
+		}
+		std::reverse(res.begin(), res.end());
+		return res;
+	}
+
 
 	void HNSWIndex::connect_bidirectional_(Id u, const std::vector<Id>& neigh, int level) {
         if ((std::size_t)u >= graph_.size()) return;
@@ -523,6 +598,76 @@ namespace vecsearch {
     }
 
 
+	std::vector<Neighbor> HNSWIndex::extend_candidates_(const float* target,
+														const std::vector<Neighbor>& base,
+														int level,
+														int ef_limit,
+														int max_expand )const {// 建议：ef_limit 或 2*ef_limit)
+		if (base.empty()) return{};
+		if (ef_limit<=0) ef_limit = (int) base.size();
+		if (max_expand<=0) max_expand = ef_limit;
+
+		const std::size_t N = ids_.size();
+		const std::size_t dim = (std::size_t) cfg_.dim;
+
+		//base 按dist升序的(根据search_layer返回的)
+		std::vector<Neighbor> cands = base;
+		if ((int)cands.size() > ef_limit) cands.resize(ef_limit);
+
+		//visited去重
+		static thread_local std::vector<std::uint32_t> vis;
+		static thread_local std::uint32_t cur_tag=0;
+
+
+		if (vis.size() < N) vis.resize(N, 0);
+
+		++cur_tag;
+		if (cur_tag==0) {
+			std::fill(vis.begin(),vis.end(),0);
+			cur_tag = 1;
+		}
+
+		const std::uint32_t tag = cur_tag;
+		for (auto &x:cands) {
+			if ((std::size_t)x.id<N) vis[x.id] = tag;
+		}
+
+		static thread_local std::vector<Id> neigh;
+		//逐个扩展base候选的邻居
+		for (std::size_t i=0 ;i<cands.size()&& (int)cands.size()<max_expand;++i) {
+			const Id u = cands[i].id;
+			if ((std::size_t)u>=N) continue;
+			if (level>=(int)graph_[u].size()) continue;
+
+			{
+				std::lock_guard<std::mutex> lk(*node_locks_[u]);
+				neigh = graph_[u][level];
+			}
+
+			for (Id nb:neigh) {
+				if ((std::size_t)nb>=N) continue;
+				if (vis[nb]==tag) continue;
+				vis[nb] = tag;
+
+				const float *nb_vec = &data_[(std::size_t)nb*dim];
+				float d = dist_l2_sqr(nb_vec,target);
+				cands.emplace_back(nb, d);
+
+				if ((int)cands.size()>=max_expand) break;
+			}
+		}
+
+		// 裁到 ef_limit（保留最好的 ef_limit 个）
+		auto by_dist = [](const Neighbor& a, const Neighbor& b){ return a.dist < b.dist; };
+		if ((int)cands.size() > ef_limit) {
+			std::nth_element(cands.begin(), cands.begin() + ef_limit, cands.end(), by_dist);
+			cands.resize(ef_limit);
+		}
+		std::sort(cands.begin(), cands.end(), by_dist);
+		return cands;
+	}
+	//ef_limit = p_.ef_construction
+	//max_expand = 2*p_.efconstruction
 
 
 	void HNSWIndex::add_batch(const std::vector<Id> &ids, const std::vector<float> &vectors) {
@@ -548,10 +693,9 @@ namespace vecsearch {
 			}
 		}
 
-
+		//预先生成层数
 		std::vector<int> new_levels(n);
 		int batch_max_level = -1;
-		Id batch_max_level_id = 0;
 		std::size_t batch_max_level_local_id = 0;//内部最好的索引,不加oldN
 		for (std::size_t i = 0;i<n;++i) {
 			new_levels[i] = get_random_level();
@@ -572,6 +716,9 @@ namespace vecsearch {
 			// std::swap(new_levels[0],new_levels[batch_max_level_local_id]);
 		}//batch_max_level_id 赋值的是全局id = oldN+i,当oldN==0时恰好等于i,一旦不等于0,batch_max_level_id会大于等于n，会越界
 
+		std::sort(permuitation.begin(), permuitation.end(),[&](std::size_t a, std::size_t b){
+			return new_levels[a] > new_levels[b];
+		});
 
 		std::vector<int> levels_internal(n);
 		for (std::size_t i = 0; i < n; ++i) {
@@ -587,123 +734,59 @@ namespace vecsearch {
 			data_.insert(data_.end(), vec, vec+dim);
 
 			int level = levels_internal[i];
-
-
 			graph_.emplace_back(level+1);
 			for (int l = 0;l<=level;++l) {
 				int M_max = (l==0)?(p_.M<<1):p_.M;
 				graph_.back()[l].reserve(M_max+1);
 			}
 		}
-		//seeding 串行插入骨架
-		std::size_t seed_len = (oldN==0)?std::min(n,(std::size_t)1000):0;
 
-		if (oldN==0) {
-			entry_point_= 0;
+		std::size_t start_u = oldN;
+
+		// 如果是空图初始化，手动设置第0个点
+		if (oldN == 0) {
+			entry_point_ = 0;
 			current_max_level_ = levels_internal[0];
+			start_u = 1;
+		}
 
-			//注意数据已经是按permutation顺序存入ids_和data_了，在后面直接访问data_即可
+		for (std::size_t u = start_u;u<oldN+n;++u) {
+			int level = levels_internal[u-oldN];
+			const float* target = &data_[u * dim];
 
-			for (std::size_t u = 1;u<seed_len;++u) {
-				int max_level = levels_internal[u];
-				const float *target = &data_[u*dim];//vector是原始乱序的，而我们在seeding过程是经过交换的，写成&vectors是错误的
-
-				//降落
-				Id curr_obj = entry_point_;
-				if (current_max_level_ > max_level) {
-					curr_obj = greedy_descent_(target,entry_point_,current_max_level_, max_level);
+			Id curr_obj = entry_point_;
+			int curr_max_level = current_max_level_;
+			//贪心降落(从当前最高层->待插入点的层),直接逐层beam比greedy_descent_结果好一点
+			if (curr_max_level>level) {
+				for (int l = curr_max_level;l>level;--l) {
+					int ef = 32;
+					auto top = search_layer_(target,curr_obj,ef,l);
+					if (!top.empty()) curr_obj = top[0].id;
 				}
-				//连边&搜索
-				for (int l = std::min(max_level, current_max_level_); l >= 0; --l) {
-					auto best = search_layer_(target, curr_obj, p_.ef_construction, l);
-					int M = (l == 0) ? (p_.M << 1) : p_.M;
-					auto selected = select_neighbors_heuristic_((Id)u, best, M);
-					connect_bidirectional_((Id)u, selected, l);
-					if (!best.empty()) curr_obj = best[0].id;
-				}
+			}
+			//逐层搜索链接
+			int connect_start_level = std::min(level,curr_max_level);
+			for (int l = connect_start_level;l>=0;--l) {
+				//search_layer_使用efC
+				auto best = search_layer_(target,curr_obj,p_.ef_construction,l);
+				best = extend_candidates_(target,best,l,p_.ef_construction,p_.ef_construction<<1);
+				//启发式选邻居
+				int M = (l==0)?(p_.M<<1):p_.M;
+				auto selected = select_neighbors_heuristic_((Id)u,best,M);
 
+				//建双向边
+				connect_bidirectional_((Id)u,selected,l);
 
-				//更新入口
-				if (max_level > current_max_level_) {
-					current_max_level_ = max_level;
-					entry_point_ = (Id)u;
-				}
+				//下一层入口
+				if (!best.empty()) curr_obj = best[0].id;
+			}
+
+			if (level > current_max_level_) {
+				current_max_level_ = level;
+				entry_point_ = (Id)u;
 			}
 		}
 
-
-
-		Id curr_global_entry = entry_point_;
-		int curr_global_max_level = current_max_level_;
-		//这里的curr_global_max_level现在已经是最高层了
-
-		//分块并行
-		std::size_t start_u = (oldN==0)?seed_len:oldN;
-		std::size_t end_u = oldN+n;
-
-
-		const std::size_t chunk_size = 500;
-
-		for (std::size_t chunk_start = start_u; chunk_start<end_u; chunk_start += chunk_size) {
-			std::size_t chunk_end = std::min(end_u,chunk_start+chunk_size);
-
-
-			//获取当前最新的全局入口快照(由主线程读取,是安全的)
-			Id snapshot_entry = entry_point_;
-			int snapshot_max_level = current_max_level_;
-
-			#pragma omp parallel for schedule(dynamic)
-			for (std::size_t u = chunk_start; u < chunk_end; ++u) {
-				int max_level = levels_internal[u - oldN];
-				const float* target = &data_[u * dim];
-
-				Id curr_obj = snapshot_entry; // 必须从已构建好的快照入口开始
-
-				// 先从全局最高层贪婪降落到 max_level+1（停在 max_level 层的入口附近）
-				if (snapshot_max_level > max_level) {
-					curr_obj = greedy_descent_(target, curr_obj, snapshot_max_level, max_level);
-				}
-
-				// 从 min(max_level, snapshot_max_level) 一路到 0 层：search + connect
-				for (int l = std::min(max_level, snapshot_max_level); l >= 0; --l) {
-					auto best = search_layer_(target, curr_obj, p_.ef_construction, l);
-
-					int M = (l == 0) ? (p_.M << 1) : p_.M;
-					auto selected = select_neighbors_heuristic_((Id)u, best, M);
-					connect_bidirectional_((Id)u, selected, l);
-
-					// 下一层入口：本层找到的最近点（best 已经是从近到远）
-					if (!best.empty()) curr_obj = best[0].id;
-				}
-			}
-
-
-			//并行结束,先找出当前 Chunk 内的"局部最强"
-			int chunk_max_level = -1;
-			Id chunk_best_id = 0;
-			for (std::size_t u = chunk_start; u < chunk_end; ++u) {
-				// new_levels 是相对 batch 的,u 是全局的，所以要减 oldN
-				int level = levels_internal[u - oldN];
-
-				// 这里使用 > 而不是 >=，意味着如果有多个同为最高层的点，
-				// 我们优先选择 ID 较小的（先遇到的）。
-				// 这样做有利于 Cache（旧数据可能更热），且保证确定性。
-				if (level > chunk_max_level) {
-					chunk_max_level = level;
-					chunk_best_id = (Id)u;
-				}
-			}
-
-			// 与全局比较,做一次性更新
-			if (chunk_max_level > current_max_level_) {
-				current_max_level_ = chunk_max_level;
-				entry_point_ = chunk_best_id;
-
-				// Debug Log
-				// std::cout << "Entry point updated to " << entry_point_
-				//           << " at level " << current_max_level_ << "\n";
-			}
-		}
 		refine_level0(p_.ef_construction,p_.M<<1);
 	}
 
@@ -747,23 +830,31 @@ namespace vecsearch {
 	// ===== search_one:查询 =====
 	std::vector<Neighbor> HNSWIndex::search_one(const float* q, int topk) const {
 		if (ids_.empty() || topk <= 0) return {};
-		if (current_max_level_==-1) return {};
-
-		Id curr_obj = entry_point_;
-		for (int l = current_max_level_;l>0;--l) {
-			// 在层 l 做纯贪心:一直找更近的邻居直到不能改进
-			curr_obj = greedy_descent_(q, curr_obj, l, l-1); // 或者写个 greedy_one_level(curr,l)
-		}
+		if (current_max_level_< 0) return {};
 
 		int ef = p_.ef_search;
 		if (ef < topk) ef = topk;
-		std::vector<Neighbor> best = search_layer_(q,curr_obj,ef,0);//找谁，入口，找几个(最多几个),第几层
-		//ef_search是候选集合大小上限，需要确保大于等于topk，返回的已经是升序，所以下一步不用排序
-		if (best.size()>topk) best.resize(topk);
-		for (auto &nb:best) {
-			nb.id = ids_[nb.id];
-			//关键，需要内部id变回外部id,因为我的bench_runner传了外部id,这是导致recall降低的关键原因
+
+		std::vector<Id> seeds;
+		seeds.reserve(16);
+		seeds.emplace_back(entry_point_);
+
+		for (int l = current_max_level_;l>0;--l) {
+			int ef = 64;//参数可调
+			auto top = search_layer_multi_(q,seeds,ef,l);
+			seeds.clear();
+			int K = 8;//参数可调
+			if ((int)top.size()<K) K = (int)top.size();
+			for (int i = 0;i<K;++i) seeds.emplace_back(top[i].id);
+
+			if (seeds.empty()) {
+				seeds.emplace_back(entry_point_);
+			}
 		}
+		//0层从多个seeds同时启动一次搜索
+		auto best = search_layer_multi_(q,seeds,ef,0);
+		if ((int)best.size()>topk) best.resize(topk);
+		for (auto &nb:best) nb.id = ids_[nb.id];
 		return best;
 	}
 

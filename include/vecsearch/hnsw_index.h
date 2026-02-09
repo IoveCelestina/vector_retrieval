@@ -70,6 +70,11 @@ namespace vecsearch {
 
 		void refine_level0(int ef_refine, int M0);
 
+		std::vector<Neighbor> extend_candidates_(const float *target,const std::vector<Neighbor> &base,
+												 int level,int ef_limit,int max_expand) const;
+
+		std::vector<Neighbor> search_layer_multi_(const float *target,const std::vector<Id> &entries,int ef,int level) const;
+
   		IndexConfig cfg_;
   		HNSWParams p_;
 

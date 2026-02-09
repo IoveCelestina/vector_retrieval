@@ -354,15 +354,12 @@ int main() {
         "Debug";
   #endif
 
-  std::cout << "[Build] " << build_type << "\n";
-
-
-
-
+  std::cout << "[Build Type] " << build_type << "\n";
 
   std::cout << "Benchmark\n";
-  std::cout << "dim=" << dim << " sizes={10000,100000}"
-            << " nq=" << num_queries << " topk=" << topk
+  std::cout << "dim=" << dim << " sizes={";
+  for (auto &size : sizes) std::cout << size << ", ";
+  std::cout<< " nq=" << num_queries << " topk=" << topk
             << " seed=" << seed << "\n";
 
   for (int N : sizes) {
