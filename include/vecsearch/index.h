@@ -28,7 +28,7 @@ namespace vecsearch {
 
 	//Index的统一接口(所有索引都要实现)
 	class  IIndex {
-		public:
+	public:
 		virtual  ~IIndex() = default;
 		//读配置(维度,距离类型)
 		virtual IndexConfig config() const = 0;//虚函数，=0表示纯虚函数，这种抽象类没有实体，const函数只读，不修改内部状态

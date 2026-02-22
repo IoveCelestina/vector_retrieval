@@ -73,51 +73,82 @@ CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj: CMakeFiles/bench_runner.
 CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj: C:/Users/29357/Desktop/vector_retrieval/bench/bench_runner.cpp
 CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj: CMakeFiles/bench_runner.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj -MF CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.obj.d -o CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj -MF CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.obj.d -o CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp
 
 CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.i"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp > CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.i
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp > CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.i
 
 CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.s"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp -o CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.s
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\bench\bench_runner.cpp -o CMakeFiles\bench_runner.dir\bench\bench_runner.cpp.s
 
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj: CMakeFiles/bench_runner.dir/flags.make
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj: CMakeFiles/bench_runner.dir/includes_CXX.rsp
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj: C:/Users/29357/Desktop/vector_retrieval/src/hnsw_index.cpp
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj: CMakeFiles/bench_runner.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj -MF CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.obj.d -o CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj -MF CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.obj.d -o CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp
 
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.i"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp > CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.i
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp > CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.i
 
 CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.s"
-	D:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp -o CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.s
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\src\hnsw_index.cpp -o CMakeFiles\bench_runner.dir\src\hnsw_index.cpp.s
+
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj: CMakeFiles/bench_runner.dir/flags.make
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj: CMakeFiles/bench_runner.dir/includes_CXX.rsp
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj: C:/Users/29357/Desktop/vector_retrieval/src/ivf_flat_index.cpp
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj: CMakeFiles/bench_runner.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj -MF CMakeFiles\bench_runner.dir\src\ivf_flat_index.cpp.obj.d -o CMakeFiles\bench_runner.dir\src\ivf_flat_index.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\src\ivf_flat_index.cpp
+
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\src\ivf_flat_index.cpp > CMakeFiles\bench_runner.dir\src\ivf_flat_index.cpp.i
+
+CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\src\ivf_flat_index.cpp -o CMakeFiles\bench_runner.dir\src\ivf_flat_index.cpp.s
+
+CMakeFiles/bench_runner.dir/src/distance.cpp.obj: CMakeFiles/bench_runner.dir/flags.make
+CMakeFiles/bench_runner.dir/src/distance.cpp.obj: CMakeFiles/bench_runner.dir/includes_CXX.rsp
+CMakeFiles/bench_runner.dir/src/distance.cpp.obj: C:/Users/29357/Desktop/vector_retrieval/src/distance.cpp
+CMakeFiles/bench_runner.dir/src/distance.cpp.obj: CMakeFiles/bench_runner.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/bench_runner.dir/src/distance.cpp.obj"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/bench_runner.dir/src/distance.cpp.obj -MF CMakeFiles\bench_runner.dir\src\distance.cpp.obj.d -o CMakeFiles\bench_runner.dir\src\distance.cpp.obj -c C:\Users\29357\Desktop\vector_retrieval\src\distance.cpp
+
+CMakeFiles/bench_runner.dir/src/distance.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/bench_runner.dir/src/distance.cpp.i"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\29357\Desktop\vector_retrieval\src\distance.cpp > CMakeFiles\bench_runner.dir\src\distance.cpp.i
+
+CMakeFiles/bench_runner.dir/src/distance.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/bench_runner.dir/src/distance.cpp.s"
+	C:\msys64\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\29357\Desktop\vector_retrieval\src\distance.cpp -o CMakeFiles\bench_runner.dir\src\distance.cpp.s
 
 # Object files for target bench_runner
 bench_runner_OBJECTS = \
 "CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj" \
-"CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj"
+"CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj" \
+"CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj" \
+"CMakeFiles/bench_runner.dir/src/distance.cpp.obj"
 
 # External object files for target bench_runner
 bench_runner_EXTERNAL_OBJECTS =
 
 bench_runner.exe: CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj
 bench_runner.exe: CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj
+bench_runner.exe: CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj
+bench_runner.exe: CMakeFiles/bench_runner.dir/src/distance.cpp.obj
 bench_runner.exe: CMakeFiles/bench_runner.dir/build.make
-bench_runner.exe: D:/mingw64/lib/gcc/x86_64-w64-mingw32/13.2.0/libgomp.dll.a
-bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a
-bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a
-bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libmingwthrd.a
-bench_runner.exe: D:/mingw64/x86_64-w64-mingw32/lib/libpthread.dll.a
+bench_runner.exe: C:/msys64/mingw64/lib/libgomp.dll.a
+bench_runner.exe: C:/msys64/mingw64/lib/libmingwthrd.a
 bench_runner.exe: CMakeFiles/bench_runner.dir/linkLibs.rsp
 bench_runner.exe: CMakeFiles/bench_runner.dir/objects1.rsp
 bench_runner.exe: CMakeFiles/bench_runner.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable bench_runner.exe"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\29357\Desktop\vector_retrieval\cmake-build-release\CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable bench_runner.exe"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles\bench_runner.dir\link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

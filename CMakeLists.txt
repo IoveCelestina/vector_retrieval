@@ -7,6 +7,10 @@ add_executable(bench_runner
         bench/bench_runner.cpp
         include/vecsearch/hnsw_index.h
         src/hnsw_index.cpp
+        include/vecsearch/distance.h
+        include/vecsearch/ivf_flat_index.h
+        src/ivf_flat_index.cpp
+        src/distance.cpp
 )
 
 # 针对 MinGW/GCC/Clang 的核心优化

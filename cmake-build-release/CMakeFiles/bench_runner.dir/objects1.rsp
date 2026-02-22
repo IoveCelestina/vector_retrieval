@@ -1,1 +1,1 @@
-CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj
+CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.obj CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.obj CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj CMakeFiles/bench_runner.dir/src/distance.cpp.obj

@@ -15,9 +15,20 @@
 
 #include "../include/vecsearch/bruteforce_index.h"
 #include "../include/vecsearch/hnsw_index.h"
+#include "../include/vecsearch/ivf_flat_index.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+
+// 通用字符串 trim
+static std::string trim_str(std::string s) {
+    const char* ws = " \t\r\n";
+    s.erase(0, s.find_first_not_of(ws));
+    if (s.empty()) return s;
+    s.erase(s.find_last_not_of(ws) + 1);
+    return s;
+}
 
 //解析函数
 static vecsearch::HNSWParams ParseHNSWParamsOrDie(const std::string& para_str) {
@@ -77,6 +88,40 @@ static vecsearch::HNSWParams ParseHNSWParamsOrDie(const std::string& para_str) {
 }
 
 
+static vecsearch::IVFParams ParseIVFParamsOrDie(const std::string& para_str) {
+    vecsearch::IVFParams p;
+    std::string s = para_str;
+    for (char &c:s) {if (c==',') c=';';}
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss,item,';')) {
+        item = trim_str(item);
+        if (item.empty()) continue;
+        auto pos = item.find('=');
+        if (pos==std::string::npos) throw std::runtime_error("Bad ivf param: " + item);
+        std::string key = trim_str(item.substr(0, pos));
+        std::string val = trim_str(item.substr(pos + 1));
+        for (auto& ch : key) ch = (char)std::tolower((unsigned char)ch);
+        int v = 0;
+        try {
+            v = std::stoi(val);
+        }catch (...) {
+            throw std::runtime_error("Bad ivf param value: " + item);
+        }
+
+        if (key == "nlist") {
+          p.nlist = v;
+        } else if (key == "nprobe") {
+          p.nprobe = v;
+        } else if (key == "iter" || key == "kmeans_iters") {
+          p.kmeans_iters = v;
+        } else if (key == "max_points" || key == "train_max") {
+          p.train_max_points = v;
+        }
+    }
+    return p;
+}
+
 
 
 //=========工厂函数===
@@ -85,10 +130,9 @@ static std::unique_ptr<vecsearch::IIndex> CreateIndexOrDie(
                                           const vecsearch::IndexConfig& cfg,
                                           const std::string&para_str="") {
     //用下划线太多了
-    if (type=="baseline_bruteforce"||type=="bruteforce"||type=="baseline") {
-    return std::make_unique<vecsearch::BruteForceIndex>(cfg);//创建unique_ptr指针
+    if (type=="baseline_bruteforce"||type=="bruteforce"||type=="flat") {
+        return std::make_unique<vecsearch::BruteForceIndex>(cfg);//创建unique_ptr指针
     }
-    //实现hnsw预留接口
     if (type == "hnsw") {
         // vecsearch::HNSWParams p; // 先用默认参数（M=16, ef_construction=200, ef_search=50）
         //        // return std::make_unique<vecsearch::HNSWIndex>(cfg, p);
@@ -98,12 +142,16 @@ static std::unique_ptr<vecsearch::IIndex> CreateIndexOrDie(
         }
         return std::make_unique<vecsearch::HNSWIndex>(cfg, p);
     }
+    if (type=="ivf"||type=="ivf_flat") {
+        vecsearch::IVFParams p;
+        if (!para_str.empty()) {
+          p = ParseIVFParamsOrDie(para_str);
+        }
+        return std::make_unique<vecsearch::IVFFlatIndex>(cfg, p);
+    }
     throw std::runtime_error("Unknown index type: "+type);
 
 }
-
-
-
 
 
 //=======csv小工具==========太少了就放这里
@@ -135,88 +183,31 @@ static void append_csv_row(const std::string& path,
 
 
 
-
-
-
-
 using Id = uint32_t;
 
-static float l2_sqr(const float* a, const float* b, int dim) {
-  float sum = 0.0f;
-  for (int i = 0; i < dim; ++i) {
-    float d = a[i] - b[i];
-    sum += d * d;
-  }
-  return sum;
-}
-
-// 最小暴力索引：只存向量，查询时全扫
-struct BruteForceIndex {
-  int dim = 0;
-  std::vector<Id> ids;        // size = N
-  std::vector<float> data;    // size = N * dim，row-major
-
-  explicit BruteForceIndex(int d) : dim(d) {}
-
-  size_t size() const { return ids.size(); }
-
-  void add_batch(const std::vector<Id>& in_ids, const std::vector<float>& vectors) {
-    const size_t n = in_ids.size();
-    if (vectors.size() != n * (size_t)dim) {
-      std::cerr << "add_batch: vectors size mismatch\n";
-      std::exit(1);
-    }
-    ids = in_ids;
-    data = vectors;
-  }
-
-  // 返回 topk 个 (id, dist)，按 dist 升序
-  std::vector<std::pair<Id, float>> search_one(const float* q, int topk) const {
-    const int n = (int)ids.size();
-    if (n == 0 || topk <= 0) return {};
-    if (topk > n) topk = n;
-
-    // 先计算所有距离
-    std::vector<std::pair<Id, float>> all;
-    all.reserve(n);
-    for (int i = 0; i < n; ++i) {
-      const float* v = &data[(size_t)i * dim];
-      float dist = l2_sqr(q, v, dim);
-      all.emplace_back(ids[i], dist);
-    }
-
-    // 取前 topk（部分排序）
-    std::nth_element(all.begin(), all.begin() + topk, all.end(),
-                     [](auto& x, auto& y) { return x.second < y.second; });
-    all.resize(topk);
-    std::sort(all.begin(), all.end(),
-              [](auto& x, auto& y) { return x.second < y.second; });
-    return all;
-  }
-};
 
 static std::vector<float> gen_vectors(int n, int dim, uint32_t seed, float low, float high) {
-  std::mt19937 rng(seed);
-  std::uniform_real_distribution<float> dist(low, high);
-  std::vector<float> v((size_t)n * dim);
-  for (auto& x : v) x = dist(rng);
-  return v;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> dist(low, high);
+    std::vector<float> v((size_t)n * dim);
+    for (auto& x : v) x = dist(rng);
+    return v;
 }
 
 static std::vector<Id> gen_ids(int n) {
-  std::vector<Id> ids(n);
-  for (int i = 0; i < n; ++i) ids[i] = (Id)i;
-  return ids;
+    std::vector<Id> ids(n);
+    for (int i = 0; i < n; ++i) ids[i] = (Id)i;
+    return ids;
 }
 
 static double percentile_ms(std::vector<double>& ms, double p) {
-  if (ms.empty()) return 0.0;
-  std::sort(ms.begin(), ms.end());
-  // p=0.99 => index = ceil(p*N)-1
-  size_t n = ms.size();
-  size_t idx = (size_t)std::ceil(p * n) - 1;
-  if (idx >= n) idx = n - 1;
-  return ms[idx];
+    if (ms.empty()) return 0.0;
+    std::sort(ms.begin(), ms.end());
+    // p=0.99 => index = ceil(p*N)-1
+    size_t n = ms.size();
+    size_t idx = (size_t)std::ceil(p * n) - 1;
+    if (idx >= n) idx = n - 1;
+    return ms[idx];
 }
 
 double_t check_Recall(const std::vector<Id>& search_result_id,
@@ -253,22 +244,22 @@ double_t check_Recall(const std::vector<Id>& search_result_id,
 }
 
 static std::vector<Id> extract_ids(const std::vector<vecsearch::Neighbor>& res) {//提取查询到的<Id,floay>的id列表
-  std::vector<Id> ids;
-  ids.reserve(res.size());
-  for (const auto& kv : res) ids.push_back(kv.id);
-  return ids;
+    std::vector<Id> ids;
+    ids.reserve(res.size());
+    for (const auto& kv : res) ids.push_back(kv.id);
+    return ids;
 }
 
 struct Case {
-  std::string type;
-  std::string params;
+    std::string type;
+    std::string params;
 };
 
 
 struct BenchmarkResult {//抽象成结果结构体
-  double recall_mean = 0.0;
-  double qps = 0.0;
-  double p99_ms = 0.0;
+    double recall_mean = 0.0;
+    double qps = 0.0;
+    double p99_ms = 0.0;
 };
 
 static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
@@ -277,46 +268,53 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
                                int dim,
                                int num_queries,
                                int topk) {//原来的东西抽成函数
-  //  预热
-  const int warmup = 200;
-  for (int i = 0; i < std::min(warmup, num_queries); ++i) {
-    pred.search_one(&queries[(size_t)i * dim], topk);
-  }
+    //  预热
+    const int warmup = 200;
+    for (int i = 0; i < std::min(warmup, num_queries); ++i) {
+        pred.search_one(&queries[(size_t)i * dim], topk);
+    }
 
-  // 计时+recall,统计每个 query latency + 总耗时
-  std::vector<double> per_query_ms;
-  per_query_ms.reserve(num_queries);
+    // 计时+recall,统计每个 query latency + 总耗时
+    std::vector<double> per_query_ms;
+    per_query_ms.reserve(num_queries);
 
-  auto t0 = std::chrono::high_resolution_clock::now();
-  double recall_sum = 0.0;
+    auto t0 = std::chrono::high_resolution_clock::now();
+    double recall_sum = 0.0;
 
-  for (int i = 0; i < num_queries; ++i) {
-    const float* q = &queries[(size_t)i * dim];
+    for (int i = 0; i < num_queries; ++i) {
+      const float* q = &queries[(size_t)i * dim];
 
-    // 真实值
-    auto gt_res = gt.search_one(q, topk);
-    auto gt_ids = extract_ids(gt_res);
+      // 真实值
+      auto gt_res = gt.search_one(q, topk);
+      auto gt_ids = extract_ids(gt_res);
 
-    // 计算被测索引,先算pred(被测索引),先baseline自己
-    auto qs = std::chrono::high_resolution_clock::now();
-    auto pred_res = pred.search_one(q, topk);
-    auto qe = std::chrono::high_resolution_clock::now();
+      // 计算被测索引,先算pred(被测索引),先baseline自己
+      auto qs = std::chrono::high_resolution_clock::now();
+      auto pred_res = pred.search_one(q, topk);
+      auto qe = std::chrono::high_resolution_clock::now();
 
-    auto pred_ids = extract_ids(pred_res);
-    recall_sum += check_Recall(pred_ids, gt_ids, topk);
+      auto pred_ids = extract_ids(pred_res);
+      recall_sum += check_Recall(pred_ids, gt_ids, topk);
 
-    double ms = std::chrono::duration<double, std::milli>(qe - qs).count();
-    per_query_ms.push_back(ms);
-  }
+      double ms = std::chrono::duration<double, std::milli>(qe - qs).count();
+      per_query_ms.push_back(ms);
+    }
 
-  auto t1 = std::chrono::high_resolution_clock::now();
-  double total_s = std::chrono::duration<double>(t1 - t0).count();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double total_s = std::chrono::duration<double>(t1 - t0).count();
 
-  BenchmarkResult r;
-  r.recall_mean = recall_sum / num_queries;
-  r.qps = num_queries / total_s;
-  r.p99_ms = percentile_ms(per_query_ms, 0.99);
-  return r;
+    BenchmarkResult r;
+    r.recall_mean = recall_sum / num_queries;
+
+
+    double total_pred_time_ms = 0;
+    for(double ms : per_query_ms) total_pred_time_ms += ms;
+    // 原来计算 QPS 只用 total_s。
+    // 但 total_s 是 t1-t0，中间夹杂了 gt.search_one。
+    // 所以 QPS 会被 GT 拖慢
+    r.qps = num_queries / (total_pred_time_ms / 1000.0);
+    r.p99_ms = percentile_ms(per_query_ms, 0.99);
+    return r;
 }
 
 
@@ -324,107 +322,87 @@ static BenchmarkResult RunCase(const vecsearch::IIndex& pred,
 
 int main() {
 #ifdef _OPENMP
-  // omp_set_num_threads(1);
+    std::cerr << "[OMP] max_threads=" << omp_get_max_threads()
+              << " num_procs=" << omp_get_num_procs() << "\n";
 #endif
 
-    std::cerr << "[OMP] max_threads=" << omp_get_max_threads()
-        << " num_procs=" << omp_get_num_procs() << "\n";
+
     const std::vector<Case> cases = {
       {"baseline_bruteforce", ""},
+          // 2. IVF-Flat 对比 (N=100W时, nlist=1024, nprobe=32 是常见配置)
+      {"ivf", "nlist=1024;nprobe=16"},
+      {"ivf", "nlist=1024;nprobe=32"},
+      {"ivf", "nlist=1024;nprobe=64"},
 
-       {"hnsw", "M=48;efC=800;efS=800"},
+      // 3. HNSW 对比
+    {"hnsw", "M=16;efC=200;efS=50"},
+    {"hnsw", "M=32;efC=200;efS=100"},
     };
 
 
-  //先把配置写死
-  const int dim = 128;
-  const std::vector<int> sizes = {1000000};
-  const int num_queries = 1000;
-  const int topk = 10;
-  const uint32_t seed = 20260121;
-  const float low = -1.0f;
-  const float high = 1.0f;
+    //先把配置写死
+    const int dim = 128;
+    const std::vector<int> sizes = {1000000};
+    const int num_queries = 1000;
+    const int topk = 10;
+    const uint32_t seed = 20260121;
+	std::cout<<"Preparing Data...\n";
+    const float low = -1.0f;
+    const float high = 1.0f;
+	int N = sizes[0];
+	auto base = gen_vectors(N, dim, seed, low, high);
+	auto ids = gen_ids(N);
+	auto queries = gen_vectors(num_queries, dim, seed+1, low, high);
 
-  const std::string csv_path = "benchmark_results/results.csv";
-  const std::string csv_header = "build,N,dim,topk,nq,seed,method,params,build_ms,build_qps,qps,p99_ms,mean_recall";
-  const std::string build_type =
-  #ifdef NDEBUG
-      "Release";
-  #else
-        "Debug";
-  #endif
+	vecsearch::IndexConfig cfg;
+	cfg.dim = dim;
+	cfg.metric = vecsearch::Metric::L2;
 
-  std::cout << "[Build Type] " << build_type << "\n";
+	// 建立 Ground Truth (使用优化后的 BruteForce)
+	std::cout << "Building Ground Truth (Optimized Flat)...\n";
+	vecsearch::BruteForceIndex gt(cfg);
+	gt.add_batch(ids, base);
 
-  std::cout << "Benchmark\n";
-  std::cout << "dim=" << dim << " sizes={";
-  for (auto &size : sizes) std::cout << size << ", ";
-  std::cout<< " nq=" << num_queries << " topk=" << topk
-            << " seed=" << seed << "\n";
+	std::cout << "\n====================\n";
+	std::cout << "N=" << N << " Dim=" << dim << " TopK=" << topk << "\n";
 
-  for (int N : sizes) {
-    // 1) 生成 base vectors / ids/queries,只做一次
-    auto base = gen_vectors(N, dim, seed, low, high);
-    auto ids = gen_ids(N);
-    auto queries = gen_vectors(num_queries, dim, seed + 1, low, high);
+	const std::string csv_path = "benchmark_results/results.csv";
+	const std::string csv_header = "type,params,build_ms,qps,recall,p99";
+	for (auto &c : cases) {
+		std::cout << "\n------------------------------------------------\n";
+		std::cout << "Running Case: " << c.type << " [" << c.params << "]\n";
 
-    // 2) 所有index是公用的
-    vecsearch::IndexConfig cfg;
-    cfg.dim = dim;
-    cfg.metric = vecsearch::Metric::L2;
+		auto index = CreateIndexOrDie(c.type, cfg, c.params);
 
+		// Build
+		auto t0 = std::chrono::high_resolution_clock::now();
+		index->add_batch(ids, base);
+		auto t1 = std::chrono::high_resolution_clock::now();
 
-    //3.先建ground truth(baseline)
-    vecsearch::BruteForceIndex gt(cfg);
-    gt.add_batch(ids, base);
+		// === Phase 5 核心: 激活 HNSW Freeze ===
+		if (auto hnsw = dynamic_cast<vecsearch::HNSWIndex*>(index.get())) {
+			hnsw->freeze();
+			std::cout << "[HNSW] Index frozen (Lock-free mode enabled).\n";
+		}
 
-    std::cout << "\n====================\n";
-    std::cout << "N=" << N << "\n";
+		double build_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+		std::cout << "Build Time: " << build_ms << " ms\n";
 
-    //4.跑所有case
-    for (auto &c:cases) {
-      //原来的东西pred，预热，计时
-      auto index = CreateIndexOrDie(c.type, cfg, c.params);
+		// Run
+		auto res = RunCase(*index, gt, queries, dim, num_queries, topk);
 
-      //build time计时
-      auto tb0 = std::chrono::high_resolution_clock::now();
-      index->add_batch(ids, base);
-      auto tb1 = std::chrono::high_resolution_clock::now();
+		std::cout << "Recall: " << res.recall_mean << "\n";
+		std::cout << "QPS:    " << res.qps << "\n";
+		std::cout << "P99:    " << res.p99_ms << " ms\n";
 
-      double build_ms = std::chrono::duration<double, std::milli>(tb1 - tb0).count();
-      double build_s  = std::chrono::duration<double>(tb1 - tb0).count();
-      double build_qps = (build_s > 0.0) ? (double)N / build_s : 0.0;
+		// Log to CSV
+		std::string row = c.type + "," + c.params + "," +
+						  std::to_string(build_ms) + "," +
+						  std::to_string(res.qps) + "," +
+						  std::to_string(res.recall_mean) + "," +
+						  std::to_string(res.p99_ms);
+		append_csv_row(csv_path, csv_header, row);
+	}
 
-
-      std::cout << "\nMethod = " << index->name() << "\n";
-      std::cout << "Params = " << index->params() << "\n";
-      std::cout << "Build(ms) = " << build_ms << "\n";
-      auto result = RunCase(*index,gt,queries,dim,num_queries,topk);
-      std::cout << "Recall@10 = " << result.recall_mean << "\n";
-      std::cout << "QPS = " << result.qps << "\n";
-      std::cout << "P99(ms) = " << result.p99_ms << "\n";
-
-     // 组装一行 CSV
-      std::string row =
-        build_type + "," +
-        std::to_string(N) + "," +
-        std::to_string(dim) + "," +
-        std::to_string(topk) + "," +
-        std::to_string(num_queries) + "," +
-        std::to_string(seed) + "," +
-        index->name() + "," +
-        index->params() + "," +
-        std::to_string(build_ms) + "," +
-        std::to_string(build_qps) + "," +
-        std::to_string(result.qps) + "," +
-        std::to_string(result.p99_ms) + "," +
-        std::to_string(result.recall_mean);
-
-
-
-      append_csv_row(csv_path, csv_header, row);
-    }
-  }
-
-  return 0;
+    return 0;
 }

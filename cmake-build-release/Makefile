@@ -152,6 +152,30 @@ bench/bench_runner.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/bench/bench_runner.cpp.s
 .PHONY : bench/bench_runner.cpp.s
 
+src/distance.obj: src/distance.cpp.obj
+.PHONY : src/distance.obj
+
+# target to build an object file
+src/distance.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/distance.cpp.obj
+.PHONY : src/distance.cpp.obj
+
+src/distance.i: src/distance.cpp.i
+.PHONY : src/distance.i
+
+# target to preprocess a source file
+src/distance.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/distance.cpp.i
+.PHONY : src/distance.cpp.i
+
+src/distance.s: src/distance.cpp.s
+.PHONY : src/distance.s
+
+# target to generate assembly for a file
+src/distance.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/distance.cpp.s
+.PHONY : src/distance.cpp.s
+
 src/hnsw_index.obj: src/hnsw_index.cpp.obj
 .PHONY : src/hnsw_index.obj
 
@@ -176,6 +200,30 @@ src/hnsw_index.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/hnsw_index.cpp.s
 .PHONY : src/hnsw_index.cpp.s
 
+src/ivf_flat_index.obj: src/ivf_flat_index.cpp.obj
+.PHONY : src/ivf_flat_index.obj
+
+# target to build an object file
+src/ivf_flat_index.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.obj
+.PHONY : src/ivf_flat_index.cpp.obj
+
+src/ivf_flat_index.i: src/ivf_flat_index.cpp.i
+.PHONY : src/ivf_flat_index.i
+
+# target to preprocess a source file
+src/ivf_flat_index.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.i
+.PHONY : src/ivf_flat_index.cpp.i
+
+src/ivf_flat_index.s: src/ivf_flat_index.cpp.s
+.PHONY : src/ivf_flat_index.s
+
+# target to generate assembly for a file
+src/ivf_flat_index.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\bench_runner.dir\build.make CMakeFiles/bench_runner.dir/src/ivf_flat_index.cpp.s
+.PHONY : src/ivf_flat_index.cpp.s
+
 # Help Target
 help:
 	@echo The following are some of the valid targets for this Makefile:
@@ -188,9 +236,15 @@ help:
 	@echo ... bench/bench_runner.obj
 	@echo ... bench/bench_runner.i
 	@echo ... bench/bench_runner.s
+	@echo ... src/distance.obj
+	@echo ... src/distance.i
+	@echo ... src/distance.s
 	@echo ... src/hnsw_index.obj
 	@echo ... src/hnsw_index.i
 	@echo ... src/hnsw_index.s
+	@echo ... src/ivf_flat_index.obj
+	@echo ... src/ivf_flat_index.i
+	@echo ... src/ivf_flat_index.s
 .PHONY : help
 
 
